@@ -360,37 +360,30 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                 'cid' => $posts->cid,
                 'slug' => $posts->slug,
                 'title' => $posts->title,
-                'type' => ($posts->hasSaved || 'post_draft' == $posts->type) ? 'draft' : 'publish',
+                'type' => $posts->type,
+                'hasSaved' => $posts->hasSaved,
                 'status' => $posts->status,
                 'permalink' => $posts->permalink,
-                'content' => array(
-                    'text' => $textLength == 0 ? $posts->text : substr($posts->text, 0, $textLength),
+                'text' => array(
+                    'content' => $textLength == 0 ? $posts->text : substr($posts->text, 0, $textLength),
                     'length' => array(
-                        'str' => strlen($posts->text),
-                        'mb_str' => mb_strlen($posts->text, 'UTF-8')
+                        'string' => strlen($posts->text),
+                        'utf8' => mb_strlen($posts->text, 'UTF-8')
                     )
                 ),
-                'advanced' => array(
-                    'author' => array(
-                        'id' => $posts->authorId,
-                        'name' => $posts->author->name,
-                        'mail' => $posts->author->mail,
-                        'screenName' => $posts->author->screenName,
-                    ),
-                    'data' => array(
-                        'created' => new IXR_Date($posts->created),
-                        'modified' => new IXR_Date($posts->modified),
-                        'timestamp' => array(
-                            'created' => $posts->created,
-                            'modified' => $posts->modified,
-                        )
-                    ),
-                    'categories' => Typecho_Common::arrayFlatten($posts->categories, 'name'),
-                    'tags' => implode(',', Typecho_Common::arrayFlatten($posts->tags, 'name')),
-                    'password' => $posts->password,
-                    'allowComment' => intval($posts->allowComment),
-                    'allowPing' => intval($posts->allowPing),
+                'author' => array(
+                    'id' => $posts->authorId,
+                    'name' => $posts->author->name,
+                    'mail' => $posts->author->mail,
+                    'screenName' => $posts->author->screenName,
                 ),
+                'created' => $posts->created,
+                'modified' => $posts->modified,
+                'categories' => $posts->categories,
+                'tags' => $posts->tags,
+                'password' => $posts->password,
+                'allowComment' => $posts->allowComment,
+                'allowPing' => $posts->allowPing,
             );
         }
 
