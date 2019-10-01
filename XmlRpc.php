@@ -364,8 +364,10 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                 'hasSaved' => $posts->hasSaved,
                 'status' => $posts->status,
                 'permalink' => $posts->permalink,
+                'description'    => $posts->description,
                 'text' => array(
-                    'content' => $textLength == 0 ? $posts->text : substr($posts->text, 0, $textLength),
+                    'markdown' => $textLength == 0 ? $posts->text : substr($posts->text, 0, $textLength),
+                    'html' => $textLength == 0 ? $posts->content : substr($posts->content, 0, $textLength),
                     'length' => array(
                         'string' => strlen($posts->text),
                         'utf8' => mb_strlen($posts->text, 'UTF-8')
@@ -388,6 +390,91 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         return array(true, $postStruct);
+    }
+
+    /**
+     * 常用统计
+     *
+     * @param int $blogId
+     * @param string $userName
+     * @param string $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function GetStat($blogId, $userName, $password)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+        $statArray = array(
+            "post" => array(
+                "all" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'post'))->num,
+                "publish" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'post')
+                    ->where('table.contents.status = ?', 'publish'))->num,
+                "waiting" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ? OR table.contents.type = ?', 'post', 'post_draft')
+                    ->where('table.contents.status = ?', 'waiting'))->num,
+                "draft" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'post_draft'))->num,
+                "hidden" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'post')
+                    ->where('table.contents.status = ?', 'hidden'))->num,
+                "private" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'post')
+                    ->where('table.contents.status = ?', 'private'))->num,
+            ),
+            "page" => array(
+                "all" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'page'))->num,
+                "publish" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'page')
+                    ->where('table.contents.status = ?', 'publish'))->num,
+                "hidden" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'page')
+                    ->where('table.contents.status = ?', 'hidden'))->num,
+                "draft" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'page_draft'))->num,
+            ),
+            "comment" => array(
+                "all" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
+                    ->from('table.comments'))->num,
+                "publish" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
+                    ->from('table.comments')
+                    ->where('table.comments.status = ?', 'approved'))->num,
+                "waiting" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
+                    ->from('table.comments')
+                    ->where('table.comments.status = ?', 'waiting'))->num,
+                "spam" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
+                    ->from('table.comments')
+                    ->where('table.comments.status = ?', 'spam'))->num,
+                "delete" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
+                    ->from('table.comments')
+                    ->where('table.comments.status = ?', 'deleted'))->num
+            ),
+            "categories" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
+                ->from('table.metas')
+                ->where('table.metas.type = ?', 'category'))->num,
+            "tags" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
+                ->from('table.metas')
+                ->where('table.metas.type = ?', 'tag'))->num
+        );
+
+        return array(true, $statArray);
     }
 
     /**
@@ -2428,6 +2515,7 @@ EOF;
             $api = array(
                 /** Typecho API */
                 'typecho.getPosts' => array($this, 'GetPosts'),
+                'typecho.getStat' => array($this, 'GetStat'),
 
                 /** WordPress API */
                 'wp.getPage' => array($this, 'wpGetPage'),
