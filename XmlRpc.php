@@ -668,6 +668,23 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     }
 
     /**
+     * 编辑文章
+     *
+     * @param int $postId
+     * @param string $userName
+     * @param string $password
+     * @param struct $content
+     * @return array|IXR_Error|void
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function EditPost($postId, $userName, $password, $content)
+    {
+        return $this->NewPost(1, $userName, $password, $content);
+    }
+
+    /**
      * 获取pageId指定的page
      * about wp xmlrpc api, you can see http://codex.wordpress.org/XML-RPC
      *
@@ -2705,6 +2722,7 @@ EOF;
             $api = array(
                 /** Typecho API */
                 'typecho.newPost' => array($this, 'NewPost'),
+                'typecho.editPost' => array($this, 'EditPost'),
                 'typecho.getPost' => array($this, 'GetPost'),
                 'typecho.getPosts' => array($this, 'GetPosts'),
                 'typecho.getStat' => array($this, 'GetStat'),
