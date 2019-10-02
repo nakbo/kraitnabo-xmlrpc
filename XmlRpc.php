@@ -309,98 +309,12 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     }
 
     /**
-     * 获取文章
-     *
-     * @param int $blogId
-     * @param string $userName
-     * @param string $password
-     * @param $struct
-     * @return array|IXR_Error
-     * @throws Typecho_Exception
-     * @throws Typecho_Widget_Exception
-     * @access public
-     */
-    public function GetPosts($blogId, $userName, $password, $struct)
-    {
-        if (!$this->checkAccess($userName, $password)) {
-            return $this->error;
-        }
-
-        $pageSize = 10;
-        if (!empty($struct['number'])) {
-            $pageSize = abs(intval($struct['number']));
-        }
-
-        if (!empty($struct['offset'])) {
-            $offset = abs(intval($struct['offset']));
-            $input['page'] = ceil($offset / $pageSize);
-        }
-
-        if (!empty($struct['status'])) {
-            $input['status'] = $struct['status'];
-        } else {
-            $input['status'] = "all";
-        }
-
-        $posts = $this->singletonWidget(
-            'Widget_Contents_Post_Admin',
-            "pageSize={$pageSize}",
-            $input,
-            false
-        );
-
-        $textLength = 0;
-        if (!empty($struct['text_length'])) {
-            $textLength = abs(intval($struct['text_length']));
-        }
-
-        $postStruct = array();
-        while ($posts->next()) {
-            $postStruct[] = array(
-                'cid' => $posts->cid,
-                'slug' => $posts->slug,
-                'title' => $posts->title,
-                'type' => $posts->type,
-                'hasSaved' => $posts->hasSaved,
-                'status' => $posts->status,
-                'permalink' => $posts->permalink,
-                'description'    => $posts->description,
-                'text' => array(
-                    'markdown' => $textLength == 0 ? $posts->text : substr($posts->text, 0, $textLength),
-                    'html' => $textLength == 0 ? $posts->content : substr($posts->content, 0, $textLength),
-                    'length' => array(
-                        'string' => strlen($posts->text),
-                        'utf8' => mb_strlen($posts->text, 'UTF-8')
-                    )
-                ),
-                'author' => array(
-                    'id' => $posts->authorId,
-                    'name' => $posts->author->name,
-                    'mail' => $posts->author->mail,
-                    'screenName' => $posts->author->screenName,
-                ),
-                'created' => $posts->created,
-                'modified' => $posts->modified,
-                'categories' => $posts->categories,
-                'tags' => $posts->tags,
-                'password' => $posts->password,
-                'allowComment' => $posts->allowComment,
-                'allowPing' => $posts->allowPing,
-            );
-        }
-
-        return array(true, $postStruct);
-    }
-
-    /**
      * 常用统计
      *
      * @param int $blogId
      * @param string $userName
      * @param string $password
-     * @param $struct
      * @return array|IXR_Error
-     * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
      * @access public
      */
@@ -475,6 +389,282 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         );
 
         return array(true, $statArray);
+    }
+
+    /**
+     * 获取指定id的post
+     *
+     * @param $blogId
+     * @param string $userName
+     * @param string $password
+     * @param int $postId
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function GetPost($blogId, $userName, $password, $postId)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        try {
+            $posts = $this->singletonWidget('Widget_Contents_Post_Edit', NULL, "cid={$postId}");
+        } catch (Typecho_Widget_Exception $e) {
+            return new IXR_Error($e->getCode(), $e->getMessage());
+        }
+
+        $postStruct = array(
+            'cid' => $posts->cid,
+            'slug' => $posts->slug,
+            'title' => $posts->title,
+            'type' => $posts->type,
+            'hasSaved' => $posts->hasSaved,
+            'status' => $posts->status,
+            'permalink' => $posts->permalink,
+            'commentsNum' => $posts->commentsNum,
+            'description' => $posts->description,
+            'text' => array(
+                'markdown' => $posts->text,
+                'html' => $posts->content,
+                'length' => array(
+                    'string' => strlen($posts->text),
+                    'utf8' => mb_strlen($posts->text, 'UTF-8')
+                )
+            ),
+            'author' => array(
+                'id' => $posts->authorId,
+                'name' => $posts->author->name,
+                'mail' => $posts->author->mail,
+                'screenName' => $posts->author->screenName,
+            ),
+            'created' => $posts->created,
+            'modified' => $posts->modified,
+            'categories' => $posts->categories,
+            'tags' => $posts->tags,
+            'password' => $posts->password,
+            'allowComment' => $posts->allowComment,
+            'allowPing' => $posts->allowPing,
+        );
+
+        return array(true, $postStruct);
+    }
+
+    /**
+     * 获取文章
+     *
+     * @param int $blogId
+     * @param string $userName
+     * @param string $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function GetPosts($blogId, $userName, $password, $struct)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $pageSize = 10;
+        if (!empty($struct['number'])) {
+            $pageSize = abs(intval($struct['number']));
+        }
+
+        if (!empty($struct['offset'])) {
+            $offset = abs(intval($struct['offset']));
+            $input['page'] = ceil($offset / $pageSize);
+        }
+
+        if (!empty($struct['status'])) {
+            $input['status'] = $struct['status'];
+        } else {
+            $input['status'] = "all";
+        }
+
+        $posts = $this->singletonWidget(
+            'Widget_Contents_Post_Admin',
+            "pageSize={$pageSize}",
+            $input,
+            false
+        );
+
+        $textCut = 0;
+        if (!empty($struct['text_length'])) {
+            $textCut = abs(intval($struct['text_length']));
+        }
+
+        $postStruct = array();
+        while ($posts->next()) {
+            $postStruct[] = array(
+                'cid' => $posts->cid,
+                'slug' => $posts->slug,
+                'title' => $posts->title,
+                'type' => $posts->type,
+                'hasSaved' => $posts->hasSaved,
+                'status' => $posts->status,
+                'permalink' => $posts->permalink,
+                'commentsNum' => $posts->commentsNum,
+                'description' => $posts->description,
+                'text' => array(
+                    'markdown' => $textCut == 0 ? $posts->text : substr($posts->text, 0, $textCut),
+                    'html' => $textCut == 0 ? $posts->content : substr($posts->content, 0, $textCut),
+                    'length' => array(
+                        'string' => strlen($posts->text),
+                        'utf8' => mb_strlen($posts->text, 'UTF-8')
+                    )
+                ),
+                'author' => array(
+                    'id' => $posts->authorId,
+                    'name' => $posts->author->name,
+                    'mail' => $posts->author->mail,
+                    'screenName' => $posts->author->screenName,
+                ),
+                'created' => $posts->created,
+                'modified' => $posts->modified,
+                'categories' => $posts->categories,
+                'tags' => $posts->tags,
+                'password' => $posts->password,
+                'allowComment' => $posts->allowComment,
+                'allowPing' => $posts->allowPing,
+            );
+        }
+
+        return array(true, $postStruct);
+    }
+
+    /**
+     * 撰写文章
+     *
+     * @param int $blogId
+     * @param string $userName
+     * @param string $password
+     * @param $content
+     * @return array|IXR_Error|void
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function NewPost($blogId, $userName, $password, $content)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $input = array();
+        $type = isset($content['type']) && 'page' == $content['type'] ? 'page' : 'post';
+
+        $input['title'] = trim($content['title']) == NULL ? _t('未命名文档') : $content['title'];
+
+        if (isset($content['slug'])) {
+            $input['slug'] = $content['slug'];
+        }
+
+        $input['text'] = !empty($content['text_more']) ? $content['text']
+            . "\n<!--more-->\n" . $content['text_more'] : $content['text'];
+        $input['text'] = $this->pluginHandle()->textFilter($input['text'], $this);
+
+        $input['password'] = isset($content["password"]) ? $content["password"] : NULL;
+        $input['order'] = isset($content["page_order"]) ? $content["page_order"] : NULL;
+
+        $input['tags'] = isset($content['tags']) ? $content['tags'] : NULL;
+        $input['category'] = array();
+
+        if (isset($content['cid'])) {
+            $input['cid'] = $content['cid'];
+        }
+
+        if ('page' == $type && isset($content['page_template'])) {
+            $input['template'] = $content['page_template'];
+        }
+
+        if (isset($content['dateCreated'])) {
+            /** 解决客户端与服务器端时间偏移 */
+            $input['created'] = $content['dateCreated']->getTimestamp() - $this->options->timezone + $this->options->serverTimezone;
+        }
+
+        if (!empty($content['categories']) && is_array($content['categories'])) {
+            foreach ($content['categories'] as $category) {
+                if (!$this->db->fetchRow($this->db->select('mid')
+                    ->from('table.metas')->where('type = ? AND name = ?', 'category', $category))) {
+                    $result = $this->wpNewCategory($blogId, $userName, $password, array('name' => $category));
+                    if (true !== $result) {
+                        return $result;
+                    }
+                }
+
+                $input['category'][] = $this->db->fetchObject($this->db->select('mid')
+                    ->from('table.metas')->where('type = ? AND name = ?', 'category', $category)
+                    ->limit(1))->mid;
+            }
+        }
+
+        $input['allowComment'] = (isset($content['allow_comments']) && (1 == $content['allow_comments']
+                || 'open' == $content['allow_comments'])) ? 1 : ((isset($content['allow_comments']) && (0 == $content['allow_comments']
+                || 'closed' == $content['allow_comments'])) ? 0 : $this->options->defaultAllowComment);
+
+        $input['allowPing'] = (isset($content['allow_pings']) && (1 == $content['allow_pings']
+                || 'open' == $content['allow_pings'])) ? 1 : ((isset($content['allow_pings']) && (0 == $content['allow_pings']
+                || 'closed' == $content['allow_pings'])) ? 0 : $this->options->defaultAllowPing);
+
+        $input['allowFeed'] = $this->options->defaultAllowFeed;
+        $input['do'] = $content["publish"] ? 'publish' : 'save';
+        $input['markdown'] = $this->options->xmlrpcMarkdown;
+
+        /** 调整状态 */
+        if (isset($content["status"])) {
+            $status = $content["status"];
+        } else {
+            $status = "publish";
+        }
+        $input['visibility'] = isset($content["visibility"]) ? $content["visibility"] : $status;
+        if ('publish' == $status || 'waiting' == $status || 'private' == $status || 'hidden' == $status) {
+            $input['do'] = 'publish';
+            if ('private' == $status) {
+                $input['private'] = 1;
+            }
+        } else {
+            $input['do'] = 'save';
+        }
+
+        /** 对未归档附件进行归档 */
+        $unattached = $this->db->fetchAll($this->select()->where('table.contents.type = ? AND
+        (table.contents.parent = 0 OR table.contents.parent IS NULL)', 'attachment'), array($this, 'filter'));
+
+        if (!empty($unattached)) {
+            foreach ($unattached as $attach) {
+                if (false !== strpos($input['text'], $attach['attachment']->url)) {
+                    if (!isset($input['attachment'])) {
+                        $input['attachment'] = array();
+                    }
+                    $input['attachment'][] = $attach['cid'];
+                }
+            }
+        }
+
+        /** 调用已有组件 */
+        try {
+            /** 插入 */
+            if ('page' == $type) {
+                $this->singletonWidget('Widget_Contents_Page_Edit', NULL, $input, false)->action();
+            } else {
+                $this->singletonWidget('Widget_Contents_Post_Edit', NULL, $input, false)->action();
+            }
+            if (isset($content["callback"])) {
+                $callback = true;
+            } else {
+                $callback = false;
+            }
+            return array(
+                true,
+                $callback ? $this->GetPost($blogId, $userName, $password, $this->singletonWidget('Widget_Notice')->getHighlightId()) : ""
+            );
+        } catch (Typecho_Widget_Exception $e) {
+            return array(false, new IXR_Error($e->getCode(), $e->getMessage()));
+        }
     }
 
     /**
@@ -2514,6 +2704,8 @@ EOF;
 
             $api = array(
                 /** Typecho API */
+                'typecho.newPost' => array($this, 'NewPost'),
+                'typecho.getPost' => array($this, 'GetPost'),
                 'typecho.getPosts' => array($this, 'GetPosts'),
                 'typecho.getStat' => array($this, 'GetStat'),
 
