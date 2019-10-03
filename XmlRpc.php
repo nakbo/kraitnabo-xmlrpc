@@ -685,6 +685,366 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     }
 
     /**
+     * 删除文章
+     * @param mixed $blogId
+     * @param mixed $userName
+     * @param mixed $password
+     * @param $postId
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function DeletePost($blogId, $userName, $password, $postId)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+        try {
+            $this->singletonWidget('Widget_Contents_Post_Edit', NULL, "cid={$postId}", false)->deletePost();
+            return array(true, null);
+        } catch (Typecho_Widget_Exception $e) {
+            return new IXR_Error($e->getCode(), $e->getMessage());
+        }
+    }
+
+    /**
+     * 获取评论
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param array $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function GetComments($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $input = array();
+        if (!empty($struct['status'])) {
+            $input['status'] = $struct['status'];
+        } else {
+            $input['__typecho_all_comments'] = 'on';
+        }
+
+        if (!empty($struct['cid'])) {
+            $input['cid'] = $struct['cid'];
+        }
+
+        $pageSize = 10;
+        if (!empty($struct['number'])) {
+            $pageSize = abs(intval($struct['number']));
+        }
+
+        if (!empty($struct['offset'])) {
+            $offset = abs(intval($struct['offset']));
+            $input['page'] = ceil($offset / $pageSize);
+        }
+
+        $comments = $this->singletonWidget('Widget_Comments_Admin', 'pageSize=' . $pageSize, $input, false);
+        $commentsStruct = array();
+
+        while ($comments->next()) {
+            $commentsStruct[] = array(
+                'created' => $comments->created,
+                'authorId' => $comments->authorId,
+                'coid' => $comments->coid,
+                'parent' => $comments->parent,
+                'status' => $comments->status,
+                'text' => $comments->text,
+                'permalink' => $comments->permalink,
+                'cid' => $comments->cid,
+                'title' => $comments->title,
+                'post_id' => $comments->post_id,
+                'agent' => $comments->agent,
+                'author' => $comments->author,
+                'author_url' => $comments->url,
+                'author_mail' => $comments->mail,
+                'author_ip' => $comments->ip,
+                'type' => $comments->type
+            );
+        }
+
+        return array(true, $commentsStruct);
+    }
+
+    /**
+     * 删除评论
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param integer $commentId
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function DeleteComment($blogId, $userName, $password, $commentId)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $commentId = abs(intval($commentId));
+        $commentWidget = $this->singletonWidget('Widget_Abstract_Comments');
+        $where = $this->db->sql()->where('coid = ?', $commentId);
+
+        if (!$commentWidget->commentIsWriteable($where)) {
+            return new IXR_Error(403, _t('无法编辑此评论'));
+        }
+
+        return array(intval($this->singletonWidget('Widget_Abstract_Comments')->delete($where)) > 0, null);
+    }
+
+    /**
+     * 创建评论
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param mixed $path
+     * @param array $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function NewComment($blogId, $userName, $password, $path, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        if (is_numeric($path)) {
+            $post = $this->singletonWidget('Widget_Archive', 'type=single', 'cid=' . $path, false);
+        } else {
+            /** 检查目标地址是否正确*/
+            $pathInfo = Typecho_Common::url(substr($path, strlen($this->options->index)), '/');
+            $post = Typecho_Router::match($pathInfo);
+        }
+
+        /** 这样可以得到cid或者slug*/
+        if (!isset($post) || !($post instanceof Widget_Archive) || !$post->have() || !$post->is('single')) {
+            return new IXR_Error(404, _t('这个目标地址不存在'));
+        }
+
+        $input = array();
+        $input['permalink'] = $post->pathinfo;
+        $input['type'] = 'comment';
+
+        if (isset($struct['author'])) {
+            $input['author'] = $struct['author'];
+        }
+
+        if (isset($struct['mail'])) {
+            $input['mail'] = $struct['mail'];
+        }
+
+        if (isset($struct['url'])) {
+            $input['url'] = $struct['url'];
+        }
+
+        if (isset($struct['parent'])) {
+            $input['parent'] = $struct['parent'];
+        }
+
+        if (isset($struct['text'])) {
+            $input['text'] = $struct['text'];
+        }
+
+        if (isset($struct["callback"])) {
+            $callback = true;
+        } else {
+            $callback = false;
+        }
+
+        try {
+            $commentWidget = $this->singletonWidget('Widget_Feedback', 'checkReferer=false', $input, false);
+            $commentWidget->action();
+            return array(true, $callback ? $this->GetComment($blogId, $userName, $password, intval($commentWidget->coid)) : null);
+        } catch (Typecho_Exception $e) {
+            return new IXR_Error(500, $e->getMessage());
+        }
+    }
+
+    /**
+     * 获取评论
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param integer $commentId
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function GetComment($blogId, $userName, $password, $commentId)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $comments = $this->singletonWidget('Widget_Comments_Edit', NULL, 'do=get&coid=' . intval($commentId), false);
+
+        if (!$comments->have()) {
+            return new IXR_Error(404, _t('评论不存在'));
+        }
+
+        if (!$comments->commentIsWriteable()) {
+            return new IXR_Error(403, _t('没有获取评论的权限'));
+        }
+
+        $commentsStruct = array(
+            'created' => $comments->created,
+            'authorId' => $comments->authorId,
+            'coid' => $comments->coid,
+            'parent' => $comments->parent,
+            'status' => $comments->status,
+            'text' => $comments->text,
+            'permalink' => $comments->permalink,
+            'cid' => $comments->cid,
+            'title' => $comments->title,
+            'post_id' => $comments->post_id,
+            'agent' => $comments->agent,
+            'author' => $comments->author,
+            'author_url' => $comments->url,
+            'author_mail' => $comments->mail,
+            'author_ip' => $comments->ip,
+            'type' => $comments->type
+        );
+
+        return array(true, $commentsStruct);
+    }
+
+    /**
+     * 编辑评论
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param integer $commentId
+     * @param array $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function EditComment($blogId, $userName, $password, $commentId, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $commentId = abs(intval($commentId));
+        $commentWidget = $this->singletonWidget('Widget_Abstract_Comments');
+        $where = $this->db->sql()->where('coid = ?', $commentId);
+
+        if (!$commentWidget->commentIsWriteable($where)) {
+            return new IXR_Error(403, _t('无法编辑此评论'));
+        }
+
+        $input = array();
+
+        if (isset($struct['created'])) {
+            $input['created'] = $struct['created'];
+        } elseif (isset($struct['created_gmt'])) {
+            $input['created'] = $struct['created_gmt']->getTimestamp() - $this->options->timezone + $this->options->serverTimezone;
+        }
+
+        if (isset($struct['status'])) {
+            $input['status'] = $struct['status'];
+        } else {
+            $input['status'] = "approved";
+        }
+
+        if (isset($struct['text'])) {
+            $input['text'] = $struct['text'];
+        }
+
+        if (isset($struct['author'])) {
+            $input['author'] = $struct['author'];
+        }
+
+        if (isset($struct['url'])) {
+            $input['url'] = $struct['url'];
+        }
+
+        if (isset($struct['mail'])) {
+            $input['mail'] = $struct['mail'];
+        }
+
+        $result = $commentWidget->update((array)$input, $where);
+
+        if (!$result) {
+            return new IXR_Error(404, _t('评论不存在'));
+        }
+
+        return array(true, null);
+    }
+
+    /**
+     * mwNewMediaObject
+     *
+     * @param int $blogId
+     * @param string $userName
+     * @param string $password
+     * @param mixed $data
+     * @return array|IXR_Error
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function NewMediaObject($blogId, $userName, $password, $data)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $result = Widget_Upload::uploadHandle($data);
+
+        if (false === $result) {
+            return IXR_Error(500, _t('上传失败'));
+        } else {
+
+            $insertId = $this->insert(array(
+                'title' => $result['name'],
+                'slug' => $result['name'],
+                'type' => 'attachment',
+                'status' => 'publish',
+                'text' => serialize($result),
+                'allowComment' => 1,
+                'allowPing' => 0,
+                'allowFeed' => 1
+            ));
+
+            $this->db->fetchRow($this->select()->where('table.contents.cid = ?', $insertId)
+                ->where('table.contents.type = ?', 'attachment'), array($this, 'push'));
+
+            /** 增加插件接口 */
+            $this->pluginHandle()->upload($this);
+
+            $object = array(
+                'name' => $this->attachment->name,
+                'url'  => $this->attachment->url
+            );
+
+            return array(true, $object);
+        }
+    }
+
+    /**
      * 获取pageId指定的page
      * about wp xmlrpc api, you can see http://codex.wordpress.org/XML-RPC
      *
@@ -2721,11 +3081,17 @@ EOF;
 
             $api = array(
                 /** Typecho API */
+                'typecho.getStat' => array($this, 'GetStat'),
                 'typecho.newPost' => array($this, 'NewPost'),
                 'typecho.editPost' => array($this, 'EditPost'),
                 'typecho.getPost' => array($this, 'GetPost'),
+                'typecho.deletePost' => array($this, 'DeletePost'),
                 'typecho.getPosts' => array($this, 'GetPosts'),
-                'typecho.getStat' => array($this, 'GetStat'),
+                'typecho.newComment' => array($this, 'NewComment'),
+                'typecho.getComments' => array($this, 'GetComments'),
+                'typecho.editComment' => array($this, 'EditComment'),
+                'typecho.deleteComment' => array($this, 'DeleteComment'),
+                'typecho.newMediaObject' => array($this, 'NewMediaObject'),
 
                 /** WordPress API */
                 'wp.getPage' => array($this, 'wpGetPage'),
