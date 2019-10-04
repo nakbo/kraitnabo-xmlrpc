@@ -309,6 +309,39 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     }
 
     /**
+     * 获取用户
+     *
+     * @access public
+     * @param $blogId
+     * @param $userName
+     * @param $password
+     * @return array|IXR_Error
+     * @throws Typecho_Widget_Exception
+     */
+    public function GetUser($blogId, $userName, $password)
+    {
+
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $struct = array(
+            'uid' => $this->user->uid,
+            'name' => $this->user->name,
+            'mail' => $this->user->mail,
+            'screenName' => $this->user->screenName,
+            'url' => $this->user->url,
+            'created' => $this->user->created,
+            'activated' => $this->user->activated,
+            'logged' => $this->user->logged,
+            'group' => $this->user->group,
+            'authCode' => $this->user->authCode
+        );
+
+        return array(true, $struct);
+    }
+
+    /**
      * 常用统计
      *
      * @param int $blogId
@@ -1037,7 +1070,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
             $object = array(
                 'name' => $this->attachment->name,
-                'url'  => $this->attachment->url
+                'url' => $this->attachment->url
             );
 
             return array(true, $object);
@@ -3081,6 +3114,7 @@ EOF;
 
             $api = array(
                 /** Typecho API */
+                'typecho.getUser' => array($this, 'GetUser'),
                 'typecho.getStat' => array($this, 'GetStat'),
                 'typecho.newPost' => array($this, 'NewPost'),
                 'typecho.editPost' => array($this, 'EditPost'),
