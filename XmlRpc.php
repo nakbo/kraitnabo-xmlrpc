@@ -436,7 +436,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @throws Typecho_Widget_Exception
      * @access public
      */
-    public function GetPost($blogId, $userName, $password, $postId)
+    public function GetPost($blogId, $userName, $password, $postId, $struct)
     {
         if (!$this->checkAccess($userName, $password)) {
             return $this->error;
@@ -448,6 +448,11 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return new IXR_Error($e->getCode(), $e->getMessage());
         }
 
+        $textCut = 0;
+        if (!empty($struct['text_length'])) {
+            $textCut = abs(intval($struct['text_length']));
+        }
+
         $postStruct = array(
             'cid' => $posts->cid,
             'slug' => $posts->slug,
@@ -457,10 +462,10 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             'status' => $posts->status,
             'permalink' => $posts->permalink,
             'commentsNum' => $posts->commentsNum,
-            'description' => $posts->description,
+            'description' => empty($struct['text_description']) ? $posts->description : null,
             'text' => array(
-                'markdown' => $posts->text,
-                'html' => $posts->content,
+                'markdown' => empty($struct['text_markdown']) ? $textCut == 0 ? $posts->text : substr($posts->text, 0, $textCut) : null,
+                'html' => empty($struct['text_html']) ? $textCut == 0 ? $posts->content : substr($posts->content, 0, $textCut) : null,
                 'length' => array(
                     'string' => strlen($posts->text),
                     'utf8' => mb_strlen($posts->text, 'UTF-8')
@@ -477,6 +482,76 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             'categories' => $posts->categories,
             'tags' => $posts->tags,
             'password' => $posts->password,
+            'parent' => $posts->parent,
+            'allowComment' => $posts->allowComment,
+            'allowPing' => $posts->allowPing,
+        );
+
+        return array(true, $postStruct);
+    }
+
+    /**
+     * 获取指定id的page
+     *
+     * @param $blogId
+     * @param string $userName
+     * @param string $password
+     * @param int $postId
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function GetPage($blogId, $userName, $password, $postId, $struct)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        try {
+            $posts = $this->singletonWidget('Widget_Contents_Page_Edit', NULL, "cid={$postId}");
+        } catch (Typecho_Widget_Exception $e) {
+            return new IXR_Error($e->getCode(), $e->getMessage());
+        }
+
+        $textCut = 0;
+        if (!empty($struct['text_length'])) {
+            $textCut = abs(intval($struct['text_length']));
+        }
+
+        $postStruct = array(
+            'cid' => $posts->cid,
+            'slug' => $posts->slug,
+            'title' => $posts->title,
+            'type' => $posts->type,
+            'hasSaved' => $posts->hasSaved,
+            'status' => $posts->status,
+            'permalink' => $posts->permalink,
+            'commentsNum' => $posts->commentsNum,
+            'description' => empty($struct['text_description']) ? $posts->description : null,
+            'text' => array(
+                'markdown' => empty($struct['text_markdown']) ? ($textCut == 0 ? $posts->text : substr($posts->text, 0, $textCut)) : null,
+                    'html' => empty($struct['text_html']) ? ($textCut == 0 ? $posts->content : substr($posts->content, 0, $textCut)) : null,
+                'length' => array(
+                    'string' => strlen($posts->text),
+                    'utf8' => mb_strlen($posts->text, 'UTF-8')
+                )
+            ),
+            'author' => array(
+                'id' => $posts->authorId,
+                'name' => $posts->author->name,
+                'mail' => $posts->author->mail,
+                'screenName' => $posts->author->screenName,
+            ),
+            'created' => $posts->created,
+            'modified' => $posts->modified,
+            'categories' => $posts->categories,
+            'tags' => $posts->tags,
+            'password' => $posts->password,
+            'parent' => $posts->parent,
+            'template' => $posts->template,
+            'order' => $posts->order,
+            'allowFeed' => $posts->allowFeed,
             'allowComment' => $posts->allowComment,
             'allowPing' => $posts->allowPing,
         );
@@ -512,10 +587,14 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['page'] = ceil($offset / $pageSize);
         }
 
+        $status = "all";
         if (!empty($struct['status'])) {
-            $input['status'] = $struct['status'];
-        } else {
-            $input['status'] = "all";
+            $status = $struct['status'];
+        }
+        $input["status"] = $status;
+
+        if ($status == "private") {
+            $pageSize = 9999;
         }
 
         $posts = $this->singletonWidget(
@@ -532,7 +611,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         $postStruct = array();
         while ($posts->next()) {
-            $postStruct[] = array(
+            $post = array(
                 'cid' => $posts->cid,
                 'slug' => $posts->slug,
                 'title' => $posts->title,
@@ -541,10 +620,10 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                 'status' => $posts->status,
                 'permalink' => $posts->permalink,
                 'commentsNum' => $posts->commentsNum,
-                'description' => $posts->description,
+                'description' => empty($struct['text_description']) ? $posts->description : null,
                 'text' => array(
-                    'markdown' => $textCut == 0 ? $posts->text : substr($posts->text, 0, $textCut),
-                    'html' => $textCut == 0 ? $posts->content : substr($posts->content, 0, $textCut),
+                    'markdown' => empty($struct['text_markdown']) ? ($textCut == 0 ? $posts->text : substr($posts->text, 0, $textCut)) : null,
+                    'html' => empty($struct['text_html']) ? ($textCut == 0 ? $posts->content : substr($posts->content, 0, $textCut)) : null,
                     'length' => array(
                         'string' => strlen($posts->text),
                         'utf8' => mb_strlen($posts->text, 'UTF-8')
@@ -561,9 +640,123 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                 'categories' => $posts->categories,
                 'tags' => $posts->tags,
                 'password' => $posts->password,
+                'parent' => $posts->parent,
+                'template' => $posts->template,
+                'order' => $posts->order,
+                'allowFeed' => $posts->allowFeed,
                 'allowComment' => $posts->allowComment,
                 'allowPing' => $posts->allowPing,
             );
+            if ($status == "all") {
+                $postStruct[] = $post;
+            } else {
+                if ($status == "private" && $posts->status == "private") {
+                    $postStruct[] = $post;
+                } else if ($status == "draft" && $posts->type == "post_draft") {
+                    $postStruct[] = $post;
+                } else if ($status == "waiting" && $posts->status == "waiting") {
+                    $postStruct[] = $post;
+                }
+            }
+        }
+
+        return array(true, $postStruct);
+    }
+
+    /**
+     * 获取独立页面
+     *
+     * @param int $blogId
+     * @param string $userName
+     * @param string $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function GetPages($blogId, $userName, $password, $struct)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $pageSize = 10;
+        if (!empty($struct['number'])) {
+            $pageSize = abs(intval($struct['number']));
+        }
+
+        if (!empty($struct['offset'])) {
+            $offset = abs(intval($struct['offset']));
+            $input['page'] = ceil($offset / $pageSize);
+        }
+
+        $status = "all";
+        if (!empty($struct['status'])) {
+            $status = $struct['status'];
+        }
+        $input["status"] = $status;
+
+        if ($status == "private") {
+            $pageSize = 9999;
+        }
+
+        $posts = $this->singletonWidget(
+            'Widget_Contents_Page_Admin',
+            "pageSize={$pageSize}",
+            $input,
+            false
+        );
+
+        $textCut = 0;
+        if (!empty($struct['text_length'])) {
+            $textCut = abs(intval($struct['text_length']));
+        }
+
+        $postStruct = array();
+        while ($posts->next()) {
+            $post = array(
+                'cid' => $posts->cid,
+                'slug' => $posts->slug,
+                'title' => $posts->title,
+                'type' => $posts->type,
+                'hasSaved' => $posts->hasSaved,
+                'status' => $posts->status,
+                'permalink' => $posts->permalink,
+                'commentsNum' => $posts->commentsNum,
+                'description' => empty($struct['text_description']) ? $posts->description : null,
+                'text' => array(
+                    'markdown' => empty($struct['text_markdown']) ? $textCut == 0 ? $posts->text : substr($posts->text, 0, $textCut) : null,
+                    'html' => empty($struct['text_html']) ? $textCut == 0 ? $posts->content : substr($posts->content, 0, $textCut) : null,
+                    'length' => array(
+                        'string' => strlen($posts->text),
+                        'utf8' => mb_strlen($posts->text, 'UTF-8')
+                    )
+                ),
+                'author' => array(
+                    'id' => $posts->authorId,
+                    'name' => $posts->author->name,
+                    'mail' => $posts->author->mail,
+                    'screenName' => $posts->author->screenName,
+                ),
+                'created' => $posts->created,
+                'modified' => $posts->modified,
+                'categories' => $posts->categories,
+                'tags' => $posts->tags,
+                'password' => $posts->password,
+                'parent' => $posts->parent,
+                'allowComment' => $posts->allowComment,
+                'allowPing' => $posts->allowPing,
+            );
+            if ($status == "all") {
+                $postStruct[] = $post;
+            } else {
+                if ($status == "draft" && $posts->type == "post_draft") {
+                    $postStruct[] = $post;
+                } else if ($status == "waiting" && $posts->status == "waiting") {
+                    $postStruct[] = $post;
+                }
+            }
         }
 
         return array(true, $postStruct);
@@ -601,7 +794,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         $input['text'] = $this->pluginHandle()->textFilter($input['text'], $this);
 
         $input['password'] = isset($content["password"]) ? $content["password"] : NULL;
-        $input['order'] = isset($content["page_order"]) ? $content["page_order"] : NULL;
+        $input['order'] = isset($content["order"]) ? $content["order"] : NULL;
 
         $input['tags'] = isset($content['tags']) ? $content['tags'] : NULL;
         $input['category'] = array();
@@ -610,8 +803,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['cid'] = $content['cid'];
         }
 
-        if ('page' == $type && isset($content['page_template'])) {
-            $input['template'] = $content['page_template'];
+        if ('page' == $type && isset($content['template'])) {
+            $input['template'] = $content['template'];
         }
 
         if (isset($content['dateCreated'])) {
@@ -636,12 +829,12 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         $input['allowComment'] = (isset($content['allow_comments']) && (1 == $content['allow_comments']
-                || 'open' == $content['allow_comments'])) ? 1 : ((isset($content['allow_comments']) && (0 == $content['allow_comments']
-                || 'closed' == $content['allow_comments'])) ? 0 : $this->options->defaultAllowComment);
+            || 'open' == $content['allow_comments'])) ? 1 : ((isset($content['allow_comments']) && (0 == $content['allow_comments']
+            || 'closed' == $content['allow_comments'])) ? 0 : $this->options->defaultAllowComment);
 
         $input['allowPing'] = (isset($content['allow_pings']) && (1 == $content['allow_pings']
-                || 'open' == $content['allow_pings'])) ? 1 : ((isset($content['allow_pings']) && (0 == $content['allow_pings']
-                || 'closed' == $content['allow_pings'])) ? 0 : $this->options->defaultAllowPing);
+            || 'open' == $content['allow_pings'])) ? 1 : ((isset($content['allow_pings']) && (0 == $content['allow_pings']
+            || 'closed' == $content['allow_pings'])) ? 0 : $this->options->defaultAllowPing);
 
         $input['allowFeed'] = $this->options->defaultAllowFeed;
         $input['do'] = $content["publish"] ? 'publish' : 'save';
@@ -693,7 +886,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
             return array(
                 true,
-                $callback ? $this->GetPost($blogId, $userName, $password, $this->singletonWidget('Widget_Notice')->getHighlightId()) : ""
+                null
             );
         } catch (Typecho_Widget_Exception $e) {
             return array(false, new IXR_Error($e->getCode(), $e->getMessage()));
@@ -1019,7 +1212,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['mail'] = $struct['mail'];
         }
 
-        $result = $commentWidget->update((array)$input, $where);
+        $result = $commentWidget->update((array) $input, $where);
 
         if (!$result) {
             return new IXR_Error(404, _t('评论不存在'));
@@ -1075,6 +1268,62 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
             return array(true, $object);
         }
+    }
+
+    /**
+     * 获取所有的分类
+     *
+     * @param int $blogId
+     * @param string $userName
+     * @param string $password
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function GetCategories($blogId, $userName, $password)
+    {
+        if (!$this->checkAccess($userName, $password)) {
+            return ($this->error);
+        }
+
+        $categories = $this->singletonWidget('Widget_Metas_Category_List');
+
+        /** 初始化category数组*/
+        $categoryStructs = array();
+        while ($categories->next()) {
+            $categoryStructs[] = array(
+                'mid' => $categories->mid,
+                'parent' => $categories->parent,
+                'name' => $categories->name,
+                'description' => $categories->description,
+                'permalink' => $categories->permalink,
+                'feedUrl' => $categories->feedUrl,
+                'count' => $categories->count,
+                'order' => $categories->order,
+                'parent' => $categories->parent,
+            );
+        }
+
+        return array(true, $categoryStructs);
+    }
+
+    /**
+     * 编辑文章
+     *
+     * @param int $postId
+     * @param string $userName
+     * @param string $password
+     * @param struct $content
+     * @return array|IXR_Error|void
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function EditPage($postId, $userName, $password, $content)
+    {
+        $content['type'] = 'page';
+        return $this->NewPost(1, $userName, $password, $content);
     }
 
     /**
@@ -1390,8 +1639,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         /** 开始接受数据 */
         $input['name'] = $category['name'];
         $input['slug'] = Typecho_Common::slugName(empty($category['slug']) ? $category['name'] : $category['slug']);
-        $input['parent'] = isset($category['parent_id']) ? $category['parent_id'] :
-            (isset($category['parent']) ? $category['parent'] : 0);
+        $input['parent'] = isset($category['parent_id']) ? $category['parent_id'] : (isset($category['parent']) ? $category['parent'] : 0);
         $input['description'] = isset($category['description']) ? $category['description'] : $category['name'];
         $input['do'] = 'insert';
 
@@ -1782,8 +2030,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
                 if (!$this->_wpOptions[$option]['readonly'] && isset($this->_wpOptions[$option]['option'])) {
                     if ($this->db->query($this->db->update('table.options')
-                            ->rows(array('value' => $value))
-                            ->where('name = ?', $this->_wpOptions[$option]['option'])) > 0) {
+                        ->rows(array('value' => $value))
+                        ->where('name = ?', $this->_wpOptions[$option]['option'])) > 0) {
                         $struct[$option]['value'] = $value;
                     }
                 }
@@ -1989,7 +2237,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['mail'] = $struct['author_email'];
         }
 
-        $result = $commentWidget->update((array)$input, $where);
+        $result = $commentWidget->update((array) $input, $where);
 
         if (!$result) {
             return new IXR_Error(404, _t('评论不存在'));
@@ -2243,12 +2491,12 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         $input['allowComment'] = (isset($content['mt_allow_comments']) && (1 == $content['mt_allow_comments']
-                || 'open' == $content['mt_allow_comments'])) ? 1 : ((isset($content['mt_allow_comments']) && (0 == $content['mt_allow_comments']
-                || 'closed' == $content['mt_allow_comments'])) ? 0 : $this->options->defaultAllowComment);
+            || 'open' == $content['mt_allow_comments'])) ? 1 : ((isset($content['mt_allow_comments']) && (0 == $content['mt_allow_comments']
+            || 'closed' == $content['mt_allow_comments'])) ? 0 : $this->options->defaultAllowComment);
 
         $input['allowPing'] = (isset($content['mt_allow_pings']) && (1 == $content['mt_allow_pings']
-                || 'open' == $content['mt_allow_pings'])) ? 1 : ((isset($content['mt_allow_pings']) && (0 == $content['mt_allow_pings']
-                || 'closed' == $content['mt_allow_pings'])) ? 0 : $this->options->defaultAllowPing);
+            || 'open' == $content['mt_allow_pings'])) ? 1 : ((isset($content['mt_allow_pings']) && (0 == $content['mt_allow_pings']
+            || 'closed' == $content['mt_allow_pings'])) ? 0 : $this->options->defaultAllowPing);
 
         $input['allowFeed'] = $this->options->defaultAllowFeed;
         $input['do'] = $publish ? 'publish' : 'save';
@@ -2649,8 +2897,11 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return new IXR_Error($e->getCode(), $e->getMessage());
         }
 
-        $post->setCategories($postId, Typecho_Common::arrayFlatten($categories, 'categoryId'),
-            'publish' == $post->status);
+        $post->setCategories(
+            $postId,
+            Typecho_Common::arrayFlatten($categories, 'categoryId'),
+            'publish' == $post->status
+        );
         return true;
     }
 
@@ -2682,8 +2933,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         /** 暂时只做成发布*/
         $content = array();
         $this->update($content, $this->db->sql()->where('table.contents.cid = ?', $postId));
-
-
     }
 
     /**
@@ -2925,8 +3174,12 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
                 /** 现在可以ping了，但是还得检查下这个pingback是否已经存在了*/
                 $pingNum = $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
-                    ->from('table.comments')->where('table.comments.cid = ? AND table.comments.url = ? AND table.comments.type <> ?',
-                        $post->cid, $source, 'comment'))->num;
+                    ->from('table.comments')->where(
+                        'table.comments.cid = ? AND table.comments.url = ? AND table.comments.type <> ?',
+                        $post->cid,
+                        $source,
+                        'comment'
+                    ))->num;
 
                 if ($pingNum <= 0) {
                     /** 检查源地址是否存在*/
@@ -2947,11 +3200,9 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                                     return new IXR_Error(50, _t('源地址不支持PingBack'));
                                 }
                             }
-
                         } else {
                             return new IXR_Error(16, _t('源地址服务器错误'));
                         }
-
                     } catch (Exception $e) {
                         return new IXR_Error(16, _t('源地址服务器错误'));
                     }
@@ -3057,7 +3308,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         if (isset($this->request->rsd)) {
             echo
-            <<<EOF
+                <<<EOF
 <?xml version="1.0" encoding="{$this->options->charset}"?>
 <rsd version="1.0" xmlns="http://archipelago.phrasewise.com/rsd">
     <service>
@@ -3065,6 +3316,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         <engineLink>http://www.typecho.org/</engineLink>
         <homePageLink>{$this->options->siteUrl}</homePageLink>
         <apis>
+            <api name="Typecho" blogID="1" preferred="true" apiLink="{$this->options->xmlRpcUrl}" />
             <api name="WordPress" blogID="1" preferred="true" apiLink="{$this->options->xmlRpcUrl}" />
             <api name="Movable Type" blogID="1" preferred="false" apiLink="{$this->options->xmlRpcUrl}" />
             <api name="MetaWeblog" blogID="1" preferred="false" apiLink="{$this->options->xmlRpcUrl}" />
@@ -3075,7 +3327,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 EOF;
         } else if (isset($this->request->wlw)) {
             echo
-            <<<EOF
+                <<<EOF
 <?xml version="1.0" encoding="{$this->options->charset}"?>
 <manifest xmlns="http://schemas.microsoft.com/wlw/manifest/weblog">
     <options>
@@ -3121,11 +3373,15 @@ EOF;
                 'typecho.getPost' => array($this, 'GetPost'),
                 'typecho.deletePost' => array($this, 'DeletePost'),
                 'typecho.getPosts' => array($this, 'GetPosts'),
+                'typecho.getPage' => array($this, 'GetPage'),
+                'typecho.editPage' => array($this, 'EditPage'),
+                'typecho.getPages' => array($this, 'GetPages'),
                 'typecho.newComment' => array($this, 'NewComment'),
                 'typecho.getComments' => array($this, 'GetComments'),
                 'typecho.editComment' => array($this, 'EditComment'),
                 'typecho.deleteComment' => array($this, 'DeleteComment'),
                 'typecho.newMediaObject' => array($this, 'NewMediaObject'),
+                'typecho.getCategories' => array($this, 'GetCategories'),
 
                 /** WordPress API */
                 'wp.getPage' => array($this, 'wpGetPage'),
