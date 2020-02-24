@@ -28,14 +28,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     private $error;
 
     /**
-     * 系统选项
-     *
-     * @access private
-     * @var array
-     */
-    private $_tpOptions;
-
-    /**
      * wordpress风格的系统选项
      *
      * @access private
@@ -209,60 +201,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         // 临时保护模块
         $this->security->enable(false);
 
-        $this->_tpOptions = array(
-            // Read only options
-            'systemName' => array(
-                'desc' => _t('系统名'),
-                'readonly' => true,
-                'value' => $this->options->software
-            ),
-            'systemGenerator' => array(
-                'desc' => _t('系统版本'),
-                'readonly' => true,
-                'value' => $this->options->version
-            ),
-            'title' => array(
-                'desc' => _t('站点名称'),
-                'readonly' => true,
-                'option' => 'title'
-            ),
-            'siteUrl' => array(
-                'desc' => _t('站点地址'),
-                'readonly' => true,
-                'option' => 'siteUrl'
-            ),
-            'description' => array(
-                'desc' => _t('站点描述'),
-                'readonly' => true,
-                'option' => 'description'
-            ),
-            'keywords' => array(
-                'desc' => _t('关键词'),
-                'readonly' => true,
-                'option' => 'keywords'
-            ),
-            'theme' => array(
-                'desc' => _t('主题名'),
-                'readonly' => true,
-                'option' => 'theme'
-            ),
-            'markdown' => array(
-                'desc' => _t('使用 Markdown 语法'),
-                'readonly' => true,
-                'option' => 'markdown'
-            ),
-            'allowXmlRpc' => array(
-                'desc' => _t('XMLRPC 接口'),
-                'readonly' => true,
-                'option' => 'allowXmlRpc'
-            ),
-            'xmlrpcMarkdown' => array(
-                'desc' => _t('XMLRPC Markdown'),
-                'readonly' => true,
-                'option' => 'xmlrpcMarkdown'
-            )
-        );
-
         $this->_wpOptions = array(
             // Read only options
             'software_name' => array(
@@ -338,7 +276,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     public function GetDemo($version)
     {
-        return array("typecho", 5, $version);
+        return array("typecho", 6, $version);
     }
 
 
@@ -479,6 +417,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                     ->from('table.contents')
                     ->where('table.contents.type = ?', 'post')
                     ->where('table.contents.status = ?', 'private'))->num,
+                "textSize" => $this->GetCharacters("table.contents", "post")
             ),
             "page" => array(
                 "all" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
@@ -495,10 +434,14 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                 "draft" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('table.contents.type = ?', 'page_draft'))->num,
+                "textSize" => $this->GetCharacters("table.contents", "page")
             ),
             "comment" => array(
                 "all" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
                     ->from('table.comments'))->num,
+                "me" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
+                    ->from('table.comments')
+                    ->where('table.comments.authorId = ?', $blogId))->num,
                 "publish" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
                     ->from('table.comments')
                     ->where('table.comments.status = ?', 'approved'))->num,
@@ -510,17 +453,52 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                     ->where('table.comments.status = ?', 'spam'))->num,
                 "delete" => $this->db->fetchObject($this->db->select(array('COUNT(coid)' => 'num'))
                     ->from('table.comments')
-                    ->where('table.comments.status = ?', 'deleted'))->num
+                    ->where('table.comments.status = ?', 'deleted'))->num,
+                "textSize" => $this->GetCharacters("table.comments", "comment")
             ),
-            "categories" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
-                ->from('table.metas')
-                ->where('table.metas.type = ?', 'category'))->num,
-            "tags" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
-                ->from('table.metas')
-                ->where('table.metas.type = ?', 'tag'))->num
+            "categories" => array(
+                "all" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
+                    ->from('table.metas')
+                    ->where('table.metas.type = ?', 'category'))->num,
+                "archive" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
+                    ->from('table.metas')
+                    ->where('table.metas.type = ?', 'category')
+                    ->where('table.metas.count != ?', '0'))->num
+            ),
+            "tags" => array(
+                "all" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
+                    ->from('table.metas')
+                    ->where('table.metas.type = ?', 'tag'))->num,
+                "archive" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
+                    ->from('table.metas')
+                    ->where('table.metas.type = ?', 'tag')
+                    ->where('table.metas.count != ?', '0'))->num
+            ),
+            "medias" => array(
+                "all" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'attachment'))->num,
+                "archive" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
+                    ->from('table.contents')
+                    ->where('table.contents.type = ?', 'attachment')
+                    ->where('table.contents.parent != ?', '0'))->num
+            )
         );
 
         return array(true, $statArray);
+    }
+
+    public function GetCharacters($from, $type)
+    {
+        $chars = 0;
+        $select = $this->db->select('text')
+            ->from($from)
+            ->where('type = ?', $type);
+        $rows = $this->db->fetchAll($select);
+        foreach ($rows as $row) {
+            $chars += mb_strlen($row['text'], 'UTF-8');
+        }
+        return $chars;
     }
 
     public function commonPostStruct($posts, $struct)
@@ -535,24 +513,21 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             'permalink' => $posts->permalink,
             'commentsNum' => $posts->commentsNum,
             'description' => !empty($struct['text_description']) ? $posts->description : null,
-            'text' => array(
-                'markdown' => ($posts->type == "post_draft" || !empty($struct['text_markdown'])) ? $posts->text : null,
-                'html' => ($posts->type == "post_draft" || !empty($struct['text_html'])) ? $posts->content : null,
-                'length' => array(
-                    'string' => strlen($posts->text),
-                    'utf8' => mb_strlen($posts->text, 'UTF-8')
-                )
-            ),
-            'author' => array(
-                'id' => $posts->authorId,
-                'name' => $posts->author->name,
-                'mail' => $posts->author->mail,
-                'screenName' => $posts->author->screenName,
-            ),
+
+            'textMarkdown' => ($posts->type == "post_draft" || !empty($struct['text_markdown'])) ? $posts->text : null,
+            'textHtml' => ($posts->type == "post_draft" || !empty($struct['text_html'])) ? $posts->content : null,
+            'textLength' => strlen($posts->text),
+
+            'authorId' => $posts->authorId,
+            'authorName' => $posts->author->name,
+            'authorMail' => $posts->author->mail,
+            'authorScreenName' => $posts->author->screenName,
+
+            'fields' => $this->commonFieldsStruct($posts->cid),
             'created' => $posts->created,
             'modified' => $posts->modified,
-            'categories' => $posts->categories,
-            'tags' => $posts->tags,
+            'categories' => $this->commonMetasNameStruct($posts->categories),
+            'tags' => $this->commonMetasNameStruct($posts->tags),
             'password' => $posts->password,
             'parent' => $posts->parent,
             'template' => $posts->template,
@@ -561,6 +536,30 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             'allowComment' => $posts->allowComment,
             'allowPing' => $posts->allowPing
         );
+    }
+
+    public function commonFieldsStruct($cid)
+    {
+        $fields = array();
+        $rows = $this->db->fetchAll($this->db->select()->from('table.fields')
+            ->where('cid = ?', $cid));
+        foreach ($rows as $row) {
+            $fields[] = array(
+                $row['name'],
+                $row['type'],
+                $row[$row['type'] . '_value']
+            );
+        }
+        return $fields;
+    }
+
+    public function commonMetasNameStruct($metas)
+    {
+        $meta = array();
+        foreach ($metas as $row) {
+            $meta[] = $row['name'];
+        }
+        return $meta;
     }
 
     /**
@@ -654,6 +653,14 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $status = $struct['status'];
         }
 
+        if (!empty($struct['category'])) {
+            $input['category'] = $struct['category'];
+        }
+
+        if (!empty($struct['keywords'])) {
+            $input['keywords'] = $struct['keywords'];
+        }
+
         $input["status"] = $status;
 
         $posts = $this->singletonWidget(
@@ -673,11 +680,11 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                     $postStruct[] = $post;
                 } else if ($status == "private" && $posts->status == "private") {
                     $postStruct[] = $post;
-                } else if ($status == "draft" && $posts->type == "post_draft") {
-                    $postStruct[] = $post;
                 } else if ($status == "waiting" && $posts->status == "waiting") {
                     $postStruct[] = $post;
                 } else if ($status == "hidden" && $posts->status == "hidden") {
+                    $postStruct[] = $post;
+                } else if ($status == "draft" && $posts->type == "post_draft") {
                     $postStruct[] = $post;
                 }
             }
@@ -780,14 +787,13 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['slug'] = $content['slug'];
         }
 
-        $input['text'] = !empty($content['text_more']) ? $content['text']
-            . "\n<!--more-->\n" . $content['text_more'] : $content['text'];
+        $input['text'] = !empty($content['text']) ? $content['text'] : NULL;
         $input['text'] = $this->pluginHandle()->textFilter($input['text'], $this);
 
         $input['password'] = isset($content["password"]) ? $content["password"] : NULL;
         $input['order'] = isset($content["order"]) ? $content["order"] : NULL;
 
-        $input['tags'] = isset($content['tags']) ? $content['tags'] : NULL;
+        $input['tags'] = !empty($content['tags']) && is_array($content['tags']) ? implode(',', $content['tags']) : NULL;
         $input['category'] = array();
 
         if (isset($content['cid'])) {
@@ -801,6 +807,10 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         if (isset($content['dateCreated'])) {
             /** 解决客户端与服务器端时间偏移 */
             $input['created'] = $content['dateCreated']->getTimestamp() - $this->options->timezone + $this->options->serverTimezone;
+        }
+
+        if (isset($content['fields']) && is_array($content['fields'])) {
+            $input['fields'] = $content['fields'];
         }
 
         if (!empty($content['categories']) && is_array($content['categories'])) {
@@ -977,6 +987,10 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['cid'] = $struct['cid'];
         }
 
+        if (!empty($struct['email'])) {
+            $input['email'] = $struct['email'];
+        }
+
         $pageSize = 10;
         if (!empty($struct['number'])) {
             $pageSize = abs(intval($struct['number']));
@@ -987,14 +1001,44 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['page'] = ceil($offset / $pageSize);
         }
 
-        $comments = $this->singletonWidget('Widget_Comments_Admin', 'pageSize=' . $pageSize, $input, false);
         $commentsStruct = array();
 
+        $comments = $this->singletonWidget('Widget_Comments_Admin', 'pageSize=' . $pageSize, $input, false);
         while ($comments->next()) {
             $commentsStruct[] = $this->commonCommentsStruct($comments, $struct);
         }
 
         return array(true, $commentsStruct);
+    }
+
+    /**
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param array $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function GetAlarmComments($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+        if (empty($struct['lastTime'])) {
+            return new IXR_Error(403, _t('缺少参数'));
+        }
+        if (empty($struct['number'])) {
+            $query = $this->db->select()->from('table.comments')->where('table.comments.authorId != ?', $blogId)->where('created >= ?', intval($struct['lastTime']));
+            $result = $this->db->fetchAll($query);
+        } else {
+            $query = $this->db->select(array('COUNT(coid)' => 'num'))->from('table.comments')->where('table.comments.authorId != ?', $blogId)->where('created >= ?', intval($struct['lastTime']));
+            $result = $this->db->fetchObject($query)->num;
+        }
+        return array(true, $result);
     }
 
     /**
@@ -1221,7 +1265,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         $result = Widget_Upload::uploadHandle($data);
 
         if (false === $result) {
-            return IXR_Error(500, _t('上传失败'));
+            return new IXR_Error(500, _t('上传失败'));
         } else {
 
             $insertId = $this->insert(array(
@@ -1250,6 +1294,20 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
     }
 
+    public function commonCategoryTagStruct($categories, $struct)
+    {
+        return array(
+            'mid' => $categories->mid,
+            'parent' => $categories->parent,
+            'name' => $categories->name,
+            'description' => $categories->description,
+            'permalink' => $categories->permalink,
+            'feedUrl' => $categories->feedUrl,
+            'count' => $categories->count,
+            'order' => $categories->order
+        );
+    }
+
     /**
      * 获取所有的分类
      *
@@ -1272,17 +1330,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         /** 初始化category数组*/
         $categoryStructs = array();
         while ($categories->next()) {
-            $categoryStructs[] = array(
-                'mid' => $categories->mid,
-                'parent' => $categories->parent,
-                'name' => $categories->name,
-                'description' => $categories->description,
-                'permalink' => $categories->permalink,
-                'feedUrl' => $categories->feedUrl,
-                'count' => $categories->count,
-                'order' => $categories->order,
-                'parent' => $categories->parent,
-            );
+            $categoryStructs[] = $this->commonCategoryTagStruct($categories, null);
         }
 
         return array(true, $categoryStructs);
@@ -1305,22 +1353,12 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return ($this->error);
         }
 
-        $categories = $this->singletonWidget('Widget_Metas_Tag_Cloud');
+        $tags = $this->singletonWidget('Widget_Metas_Tag_Cloud');
 
         /** 初始化category数组*/
         $categoryStructs = array();
-        while ($categories->next()) {
-            $categoryStructs[] = array(
-                'mid' => $categories->mid,
-                'parent' => $categories->parent,
-                'name' => $categories->name,
-                'description' => $categories->description,
-                'permalink' => $categories->permalink,
-                'feedUrl' => $categories->feedUrl,
-                'count' => $categories->count,
-                'order' => $categories->order,
-                'parent' => $categories->parent,
-            );
+        while ($tags->next()) {
+            $categoryStructs[] = $this->commonCategoryTagStruct($tags, null);
         }
 
         return array(true, $categoryStructs);
@@ -1332,7 +1370,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param int $postId
      * @param string $userName
      * @param string $password
-     * @param struct $content
+     * @param $content
      * @return array|IXR_Error|void
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1365,21 +1403,382 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         $struct = array();
-        if (empty($options)) {
-            $options = array_keys($this->_tpOptions);
-        }
-
         foreach ($options as $option) {
-            if (isset($this->_tpOptions[$option])) {
-                $struct[$option] = $this->_tpOptions[$option];
-                if (isset($struct[$option]['option'])) {
-                    $struct[$option]['value'] = $this->options->{$struct[$option]['option']};
-                    unset($struct[$option]['option']);
+            $select = $this->db->select()->from('table.options')
+                ->where('name = ?', $option)
+                ->where('user = ?', 0);
+
+            $os = $this->db->fetchAll($select);
+            if (!empty($os)) {
+                foreach ($os as $o) {
+                    $struct[] = array(
+                        $o['name'],
+                        $o['value']
+                    );
                 }
             }
         }
 
         return $struct;
+    }
+
+    /**
+     * 设置系统选项
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param array $options
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function SetOptions($blogId, $userName, $password, $options = array())
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password, 'administrator')) {
+            return $this->error;
+        }
+
+        $struct = array();
+        foreach ($options as $object) {
+            $select = $this->db->select()->from('table.options')
+                ->where('name = ?', $object[0])
+                ->where('user = ?', 0);
+            $os = $this->db->fetchAll($select);
+            if (!empty($os)) {
+                foreach ($os as $o) {
+                    if ($this->db->query($this->db->update('table.options')
+                            ->rows(array('value' => $object[1]))
+                            ->where('name = ?', $o['name'])) > 0) {
+                        $struct[] = array(
+                            $o['name'],
+                            $object[1]
+                        );
+                    }
+                }
+            }
+        }
+
+        return $struct;
+    }
+
+    public function commonMediasStruct($attachments, $struct)
+    {
+        return array(
+            'cid' => $attachments->cid,
+            'created' => $attachments->created,
+            'commentsNum' => $attachments->commentsNum,
+            'parent' => $attachments->parent,
+            'url' => $attachments->attachment->url,
+            'mime' => $attachments->attachment->mime,
+            'title' => $attachments->title,
+            'slug' => $attachments->slug,
+            'description' => $attachments->attachment->description,
+            'path' => $attachments->attachment->path,
+            'size' => $attachments->attachment->size,
+            'parentPost' => array(
+                'cid' => $attachments->parentPost->cid,
+                'type' => $attachments->parentPost->type,
+            )
+
+        );
+    }
+
+    /**
+     * 获取媒体文件
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function GetMedias($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password)) {
+            return $this->error;
+        }
+
+        $input = array();
+
+        if (!empty($struct['parent'])) {
+            $input['parent'] = $struct['parent'];
+        }
+
+        if (!empty($struct['mime'])) {
+            $input['mime'] = $struct['mime'];
+        }
+
+        $pageSize = 10;
+        if (!empty($struct['number'])) {
+            $pageSize = abs(intval($struct['number']));
+        }
+
+        if (!empty($struct['offset'])) {
+            $input['page'] = abs(intval($struct['offset'])) + 1;
+        }
+
+        $attachments = $this->singletonWidget('Widget_Contents_Attachment_Admin', 'pageSize=' . $pageSize, $input, false);
+        $attachmentsStruct = array();
+
+        while ($attachments->next()) {
+            $attachmentsStruct[] = $this->commonMediasStruct($attachments, null);
+        }
+        return array(true, $attachmentsStruct);
+    }
+
+    /**
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @noinspection SqlNoDataSourceInspection
+     * @noinspection SqlDialectInspection
+     * @noinspection PhpSingleStatementWithBracesInspection
+     */
+    public function PluginReplace($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password, "administrator")) {
+            return $this->error;
+        }
+        if (empty($struct['former']) || empty($struct['last']) || empty($struct['object'])) {
+            return new IXR_Error(403, _t('参数不齐,无法替换'));
+        } else {
+            $former = $struct['former'];
+            $last = $struct['last'];
+            $object = $struct['object'];
+            $array = array(
+                'post|text',
+                'post|title',
+                'page|text',
+                'page|title',
+                'field|thumb',
+                'field|mp4',
+                'field|fm',
+                'comment|text',
+                'comment|url'
+            );
+            if (in_array($object, $array)) {
+                $prefix = $this->db->getPrefix();
+                $obj = explode("|", $object);
+                $type = $obj[0];
+                $aim = $obj[1];
+
+                try {
+                    switch ($type) {
+                        case "post":
+                        case "page":
+                            $data_name = $prefix . 'contents';
+                            $this->db->query("UPDATE `{$data_name}` SET `{$aim}`=REPLACE(`{$aim}`,'{$former}','{$last}') WHERE type='{$type}'");
+                            break;
+                        case "field":
+                            $data_name = $prefix . 'fields';
+                            $this->db->query("UPDATE `{$data_name}` SET `str_value`=REPLACE(`str_value`,'{$former}','{$last}')  WHERE name='{$aim}'");
+                            break;
+                        case "comment":
+                            $data_name = $prefix . 'comments';
+                            $this->db->query("UPDATE `{$data_name}` SET `{$aim}`=REPLACE(`{$aim}`,'{$former}','{$last}')");
+                    }
+                    return array(true, null);
+                } catch (Typecho_Widget_Exception $e) {
+                    return new IXR_Error($e->getCode(), $e->getMessage());
+                }
+
+            } else {
+                return new IXR_Error(403, _t('不含此参数,无法替换'));
+            }
+        }
+    }
+
+    public function PluginLinks($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        /** @noinspection PhpUndefinedFieldInspection */
+        if (!isset($this->options->plugins['activated']['Links'])) {
+            return new IXR_Error(403, "没有启用插件");
+        }
+
+        if (!is_array($struct)) {
+            return new IXR_Error(403, "struct不是一个数组对象");
+        }
+
+        if (!isset($struct['method'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        $prefix = $this->db->getPrefix();
+
+        if ($struct['method'] == "insert") {
+            try {
+                if (!isset($struct['name'])) {
+                    return new IXR_Error(403, "没有设定名字");
+                }
+                if (!isset($struct['url'])) {
+                    return new IXR_Error(403, "没有设定链接地址");
+                }
+                $link = array();
+                $link['name'] = $struct['name'];
+                $link['url'] = $struct['url'];
+                if (isset($struct['lid'])) $link['lid'] = intval($struct['lid']);
+                if (isset($struct['image'])) $link['image'] = $struct['image'];
+                if (isset($struct['description'])) $link['description'] = $struct['description'];
+                if (isset($struct['user'])) $link['user'] = $struct['user'];
+                if (isset($struct['order'])) $link['order'] = $struct['order'];
+                if (isset($struct['sort'])) $link['sort'] = $struct['sort'];
+
+                if (isset($link['lid'])) {
+                    /** 更新数据 */
+                    $this->db->query($this->db->update($prefix . 'links')->rows($link)->where('lid = ?', $link['lid']));
+                } else {
+                    $link['order'] = $this->db->fetchObject($this->db->select(array('MAX(order)' => 'maxOrder'))->from($prefix . 'links'))->maxOrder + 1;
+                    /** 插入数据 */
+                    $link['lid'] = $this->db->query($this->db->insert($prefix . 'links')->rows($link));
+                }
+                return array(true, $link);
+            } catch (Typecho_Widget_Exception $e) {
+                return new IXR_Error($e->getCode(), $e->getMessage());
+            }
+        } else if ($struct['method'] == "delete") {
+            $lids = $struct['lids'];
+            if (!is_array($lids)) {
+                return new IXR_Error(403, "lids 不是一个数组对象");
+            }
+            $deleteCount = 0;
+            foreach ($lids as $lid) {
+                if ($this->db->query($this->db->delete($prefix . 'links')->where('lid = ?', $lid))) {
+                    $deleteCount++;
+                }
+            }
+            return array(true, $deleteCount);
+        } else {
+            try {
+                $links = $this->db->fetchAll($this->db->select()->from($prefix . 'links')->order($prefix . 'links.order', Typecho_Db::SORT_ASC));
+                return array(true, $links);
+            } catch (Typecho_Widget_Exception $e) {
+                return new IXR_Error($e->getCode(), $e->getMessage());
+            }
+        }
+    }
+
+    public function ConfigPlugins($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        if (!isset($struct['method'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        if (!isset($struct['pluginName'])) {
+            return new IXR_Error(403, "没有设定插件名字");
+        }
+
+        /** @noinspection PhpUndefinedFieldInspection */
+        if (!isset($this->options->plugins['activated']{$struct['pluginName']})) {
+            return new IXR_Error(403, "没有启用插件");
+        }
+
+        if ($struct['method'] == "edit") {
+            if (!isset($struct['settings']) || !is_array($struct['settings'])) {
+                return new IXR_Error(403, "settings 不规范");
+            }
+
+            if (empty($struct['settings'])) {
+                return new IXR_Error(403, "settings 不规范");
+            }
+
+            try {
+                $this->singletonWidget('Widget_Plugins_Edit', NULL, NULL, false)->configPlugin(
+                    $struct['pluginName'],
+                    $struct['settings']
+                );
+                return array(true, null);
+            } catch (Typecho_Exception $e) {
+                return new IXR_Error($e->getCode(), $e->getMessage());
+            }
+        } else {
+            $select = $this->db->select()->from('table.options')
+                ->where('name = ?', 'plugin:' . $struct['pluginName']);
+
+            $options = $this->db->fetchAll($select);
+            $data = array();
+            foreach ($options as $option) {
+                $data[] = unserialize($option['value']);
+            }
+            return array(true, $data);
+        }
+
+    }
+
+    public function ConfigTheme($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        if (!isset($struct['method'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        /** @noinspection PhpUndefinedFieldInspection */
+        $theme = $this->options->theme;
+        $select = $this->db->select()->from('table.options')
+            ->where('name = ?', 'theme:' . $theme);
+
+        $options = $this->db->fetchAll($select);
+
+        if ($struct['method'] == "edit") {
+            if (!isset($struct['settings']) || !is_array($struct['settings'])) {
+                return new IXR_Error(403, "settings 不规范");
+            }
+
+            if (empty($struct['settings'])) {
+                return new IXR_Error(403, "settings 不规范");
+            }
+            try {
+                foreach ($options as $option) {
+                    $value = unserialize($option['value']);
+                    $value = array_merge($value, $struct['settings']);
+
+                    $this->db->query($this->db->update('table.options')
+                        ->rows(array('value' => serialize($value)))
+                        ->where('name = ?', 'theme:' . $theme)
+                        ->where('user = ?', $option['user']));
+                }
+                return array(true, null);
+            } catch (Typecho_Exception $e) {
+                return new IXR_Error($e->getCode(), $e->getMessage());
+            }
+        } else {
+            $data = array();
+            foreach ($options as $option) {
+                $data[] = unserialize($option['value']);
+            }
+            $data[] = array(
+                "name" => $theme
+            );
+            return array(true, $data);
+        }
+
     }
 
     /**
@@ -3442,7 +3841,14 @@ EOF;
                 'typecho.newMediaObject' => array($this, 'NewMediaObject'),
                 'typecho.getCategories' => array($this, 'GetCategories'),
                 'typecho.getOptions' => array($this, 'GetOptions'),
+                'typecho.setOptions' => array($this, 'SetOptions'),
                 'typecho.getTags' => array($this, 'GetTags'),
+                'typecho.getAlarmComments' => array($this, 'GetAlarmComments'),
+                'typecho.getMedias' => array($this, 'GetMedias'),
+                'typecho.pluginReplace' => array($this, 'PluginReplace'),
+                'typecho.pluginLinks' => array($this, 'PluginLinks'),
+                'typecho.configPlugins' => array($this, 'ConfigPlugins'),
+                'typecho.configTheme' => array($this, 'ConfigTheme'),
 
                 /** WordPress API */
                 'wp.getPage' => array($this, 'wpGetPage'),
