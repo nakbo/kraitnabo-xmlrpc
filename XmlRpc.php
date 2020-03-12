@@ -1328,7 +1328,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         foreach ($options as $option) {
             $select = $this->db->select()->from('table.options')
                 ->where('name = ?', $option)
-                ->where('user = ?', 0);
+                ->where('user = ?', $blogId - 1);
 
             $os = $this->db->fetchAll($select);
             if (!empty($os)) {
@@ -1367,12 +1367,13 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         foreach ($options as $object) {
             $select = $this->db->select()->from('table.options')
                 ->where('name = ?', $object[0])
-                ->where('user = ?', 0);
+                ->where('user = ?', $blogId - 1);
             $os = $this->db->fetchAll($select);
             if (!empty($os)) {
                 foreach ($os as $o) {
                     if ($this->db->query($this->db->update('table.options')
                             ->rows(array('value' => $object[1]))
+                            ->where('user = ?', $blogId - 1)
                             ->where('name = ?', $o['name'])) > 0) {
                         $struct[] = array(
                             $o['name'],
