@@ -23,7 +23,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
  * @license GNU General Public License 2.0
  */
-class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface_Do
+class Widget_XmlRpcNabo extends Widget_Abstract_Contents implements Widget_Interface_Do
 {
     /**
      * 当前错误
