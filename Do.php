@@ -68,6 +68,10 @@ class Widget_Do extends Typecho_Widget
                 $widgetName = $objectName;
             }
         } else {
+            if (stripos($_SERVER['HTTP_USER_AGENT'], 'kraitnabo') !== false) {
+                $this->_map['xmlrpc'] = 'Widget_XmlRpcNabo';
+            }
+
             /** 判断是否为plugin */
             $actionTable = array_merge($this->_map, unserialize($this->widget('Widget_Options')->actionTable));
 
