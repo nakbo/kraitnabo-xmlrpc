@@ -76,7 +76,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     public function GetDemo($version)
     {
-        return array("typecho", 7, $version);
+        return array("typecho", 8, $version);
     }
 
 
