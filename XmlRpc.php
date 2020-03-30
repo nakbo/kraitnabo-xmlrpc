@@ -1,4 +1,4 @@
-<?php
+<?php /** @noinspection DuplicatedCode */
 /** @noinspection PhpUndefinedFunctionInspection */
 /** @noinspection PhpUnused */
 /** @noinspection PhpRedundantCatchClauseInspection */
@@ -76,7 +76,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     public function GetDemo($version)
     {
-        return array("typecho", 8, $version);
+        return array("typecho", 9, $version);
     }
 
 
@@ -851,6 +851,42 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     }
 
     /**
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param array $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function GetAlarmMessages($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password, "administrator")) {
+            return $this->error;
+        }
+        if (empty($struct['lastTime'])) {
+            return new IXR_Error(403, _t('缺少参数'));
+        }
+
+        /** @noinspection PhpUndefinedFieldInspection */
+        if (!isset($this->options->plugins['activated']['Messages'])) {
+            return new IXR_Error(403, "没有启用 messages 插件");
+        }
+
+        if (empty($struct['number'])) {
+            $query = $this->db->select()->from('table.messages')->where('table.messages.authorId = ?', $blogId)->where('created >= ?', intval($struct['lastTime']));
+            $result = $this->db->fetchAll($query);
+        } else {
+            $query = $this->db->select(array('COUNT(mid)' => 'num'))->from('table.messages')->where('table.messages.authorId = ?', $blogId)->where('created >= ?', intval($struct['lastTime']));
+            $result = $this->db->fetchObject($query)->num;
+        }
+        return array(true, $result);
+    }
+
+    /**
      * 删除评论
      *
      * @access public
@@ -1341,7 +1377,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
         }
 
-        return $struct;
+        return array(true, $struct);
     }
 
     /**
@@ -1384,7 +1420,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
         }
 
-        return $struct;
+        return array(true, $struct);
     }
 
     public function commonMediasStruct($attachments, $struct)
@@ -1673,8 +1709,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return new IXR_Error(403, "没有设定模式");
         }
 
-        $prefix = $this->db->getPrefix();
-
         if ($struct['method'] == "insert") {
             try {
                 if (empty($struct['dynamic'])) {
@@ -1696,11 +1730,11 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
                 if (isset($dynamic['did'])) {
                     /** 更新数据 */
-                    $this->db->query($this->db->update($prefix . 'dynamics')->rows($dynamic)->where('did = ?', $dynamic['did']));
+                    $this->db->query($this->db->update('table.dynamics')->rows($dynamic)->where('did = ?', $dynamic['did']));
                 } else {
                     $dynamic['created'] = $date;
                     /** 插入数据 */
-                    $dynamic['did'] = $this->db->query($this->db->insert($prefix . 'dynamics')->rows($dynamic));
+                    $dynamic['did'] = $this->db->query($this->db->insert('table.dynamics')->rows($dynamic));
                 }
                 return array(true, $dynamic);
             } catch (Typecho_Widget_Exception $e) {
@@ -1713,23 +1747,91 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
             $deleteCount = 0;
             foreach ($dids as $did) {
-                if ($this->db->query($this->db->delete($prefix . 'dynamics')->where('did = ?', $did))) {
+                if ($this->db->query($this->db->delete('table.dynamics')->where('did = ?', $did))) {
                     $deleteCount++;
                 }
             }
             return array(true, $deleteCount);
         } else {
             try {
-                $select = $this->db->select()->from($prefix . 'dynamics')
-                    ->where($prefix . 'dynamics.authorId = ?', $blogId);
+                $select = $this->db->select()->from('table.dynamics')
+                    ->where('table.dynamics.authorId = ?', $blogId);
 
                 $pageSize = empty($struct['number']) ? 10 : abs(intval($struct['number']));
                 $currentPage = empty($struct['offset']) ? 1 : ceil(abs(intval($struct['offset'])) / $pageSize);
-                $select->order($prefix . 'dynamics.created', Typecho_Db::SORT_DESC)
+                $select->order('table.dynamics.created', Typecho_Db::SORT_DESC)
                     ->page($currentPage, $pageSize);
 
                 $dynamics = $this->db->fetchAll($select);
                 return array(true, $dynamics);
+            } catch (Typecho_Widget_Exception $e) {
+                return new IXR_Error($e->getCode(), $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * 友情链接管理 - 插件
+     *
+     * @access public
+     * @param integer $blogId
+     * @param string $userName
+     * @param string $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function PluginMessages($blogId, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->checkAccess($userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        /** @noinspection PhpUndefinedFieldInspection */
+        if (!isset($this->options->plugins['activated']['Messages'])) {
+            return new IXR_Error(403, "没有启用 messages 插件");
+        }
+
+        if (!is_array($struct)) {
+            return new IXR_Error(403, "struct不是一个数组对象");
+        }
+
+        if (!isset($struct['method'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        if ($struct['method'] == "delete") {
+            $mids = $struct['mids'];
+            if (!is_array($mids)) {
+                return new IXR_Error(403, "mids 不是一个数组对象");
+            }
+            $deleteCount = 0;
+            foreach ($mids as $mid) {
+                if ($this->db->query($this->db->delete('table.messages')->where('mid = ?', $mid))) {
+                    $deleteCount++;
+                }
+            }
+            return array(true, $deleteCount);
+        } else if ($struct['method'] == "destroy") {
+            $this->db->query($this->db->delete('table.messages')
+                ->where('destroy <?', time())
+                ->where('authorId =? ', $blogId)
+            );
+            return array(true, null);
+        } else {
+            try {
+                $select = $this->db->select()->from('table.messages')
+                    ->where('table.messages.authorId = ?', $blogId);
+
+                $pageSize = empty($struct['number']) ? 10 : abs(intval($struct['number']));
+                $currentPage = empty($struct['offset']) ? 1 : ceil(abs(intval($struct['offset'])) / $pageSize);
+                $select->order('table.messages.created', Typecho_Db::SORT_DESC)
+                    ->page($currentPage, $pageSize);
+
+                $messages = $this->db->fetchAll($select);
+                return array(true, $messages);
             } catch (Typecho_Widget_Exception $e) {
                 return new IXR_Error($e->getCode(), $e->getMessage());
             }
@@ -1768,8 +1870,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return new IXR_Error(403, "没有设定模式");
         }
 
-        $prefix = $this->db->getPrefix();
-
         if ($struct['method'] == "insert") {
             try {
                 if (!isset($struct['link'])) {
@@ -1796,11 +1896,11 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
                 if (isset($link['lid'])) {
                     /** 更新数据 */
-                    $this->db->query($this->db->update($prefix . 'links')->rows($link)->where('lid = ?', $link['lid']));
+                    $this->db->query($this->db->update('table.links')->rows($link)->where('lid = ?', $link['lid']));
                 } else {
-                    $link['order'] = $this->db->fetchObject($this->db->select(array('MAX(order)' => 'maxOrder'))->from($prefix . 'links'))->maxOrder + 1;
+                    $link['order'] = $this->db->fetchObject($this->db->select(array('MAX(order)' => 'maxOrder'))->from('table.links'))->maxOrder + 1;
                     /** 插入数据 */
-                    $link['lid'] = $this->db->query($this->db->insert($prefix . 'links')->rows($link));
+                    $link['lid'] = $this->db->query($this->db->insert('table.links')->rows($link));
                 }
                 return array(true, $link);
             } catch (Typecho_Widget_Exception $e) {
@@ -1813,18 +1913,18 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
             $deleteCount = 0;
             foreach ($lids as $lid) {
-                if ($this->db->query($this->db->delete($prefix . 'links')->where('lid = ?', $lid))) {
+                if ($this->db->query($this->db->delete('table.links')->where('lid = ?', $lid))) {
                     $deleteCount++;
                 }
             }
             return array(true, $deleteCount);
         } else {
             try {
-                $select = $this->db->select()->from($prefix . 'links');
+                $select = $this->db->select()->from('table.links');
 
                 $pageSize = empty($struct['number']) ? 10 : abs(intval($struct['number']));
                 $currentPage = empty($struct['offset']) ? 1 : ceil(abs(intval($struct['offset'])) / $pageSize);
-                $select->order($prefix . 'links.order', Typecho_Db::SORT_ASC)
+                $select->order('table.links.order', Typecho_Db::SORT_ASC)
                     ->page($currentPage, $pageSize);
 
                 $links = $this->db->fetchAll($select);
@@ -2222,8 +2322,10 @@ EOF;
                 'typecho.pluginReplace' => array($this, 'PluginReplace'),
                 'typecho.pluginLinks' => array($this, 'PluginLinks'),
                 'typecho.pluginDynamics' => array($this, 'PluginDynamics'),
+                'typecho.pluginMessages' => array($this, 'PluginMessages'),
                 'typecho.configPlugins' => array($this, 'ConfigPlugins'),
                 'typecho.configTheme' => array($this, 'ConfigTheme'),
+                'typecho.getAlarmMessages' => array($this, 'GetAlarmMessages'),
 
                 /** PingBack */
                 'pingback.ping' => array($this, 'pingbackPing'),
