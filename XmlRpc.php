@@ -76,7 +76,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     public function GetDemo($version)
     {
-        return array("typecho", 9, $version);
+        return array("typecho", 10, $version);
     }
 
 
@@ -361,43 +361,53 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             "post" => array(
                 "all" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
-                    ->where('table.contents.type = ?', 'post'))->num,
+                    ->where('table.contents.type = ?', 'post')
+                    ->where('authorId = ?', $blogId))->num,
                 "publish" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('table.contents.type = ?', 'post')
-                    ->where('table.contents.status = ?', 'publish'))->num,
+                    ->where('table.contents.status = ?', 'publish')
+                    ->where('authorId = ?', $blogId))->num,
                 "waiting" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('table.contents.type = ? OR table.contents.type = ?', 'post', 'post_draft')
-                    ->where('table.contents.status = ?', 'waiting'))->num,
+                    ->where('table.contents.status = ?', 'waiting')
+                    ->where('authorId = ?', $blogId))->num,
                 "draft" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
-                    ->where('table.contents.type = ?', 'post_draft'))->num,
+                    ->where('table.contents.type = ?', 'post_draft')
+                    ->where('authorId = ?', $blogId))->num,
                 "hidden" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('table.contents.type = ?', 'post')
-                    ->where('table.contents.status = ?', 'hidden'))->num,
+                    ->where('table.contents.status = ?', 'hidden')
+                    ->where('authorId = ?', $blogId))->num,
                 "private" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('table.contents.type = ?', 'post')
-                    ->where('table.contents.status = ?', 'private'))->num,
+                    ->where('table.contents.status = ?', 'private')
+                    ->where('authorId = ?', $blogId))->num,
                 "textSize" => $this->GetCharacters("table.contents", "post")
             ),
             "page" => array(
                 "all" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
-                    ->where('table.contents.type = ?', 'page'))->num,
+                    ->where('table.contents.type = ?', 'page')
+                    ->where('authorId = ?', $blogId))->num,
                 "publish" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('table.contents.type = ?', 'page')
-                    ->where('table.contents.status = ?', 'publish'))->num,
+                    ->where('table.contents.status = ?', 'publish')
+                    ->where('authorId = ?', $blogId))->num,
                 "hidden" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('table.contents.type = ?', 'page')
-                    ->where('table.contents.status = ?', 'hidden'))->num,
+                    ->where('table.contents.status = ?', 'hidden')
+                    ->where('authorId = ?', $blogId))->num,
                 "draft" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
-                    ->where('table.contents.type = ?', 'page_draft'))->num,
+                    ->where('table.contents.type = ?', 'page_draft')
+                    ->where('authorId = ?', $blogId))->num,
                 "textSize" => $this->GetCharacters("table.contents", "page")
             ),
             "comment" => array(
