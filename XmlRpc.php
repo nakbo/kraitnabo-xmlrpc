@@ -1712,7 +1712,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         /** @noinspection PhpUndefinedFieldInspection */
-        if (!isset($this->options->plugins['activated']['DynamicsAbstarct'])) {
+        if (!isset($this->options->plugins['activated']['Dynamics'])) {
             return new IXR_Error(403, "没有启用我的动态插件");
         }
 
