@@ -74,9 +74,14 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         $this->security->enable(false);
     }
 
-    public function GetDemo($version)
+    public function GetManifest($version)
     {
-        return array("typecho", 10, $version);
+        return array(
+            "engineName" => "typecho",
+            "versionCode" => 11,
+            "versionName" => "2.0",
+            "manifest" => $version
+        );
     }
 
 
@@ -1707,7 +1712,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         /** @noinspection PhpUndefinedFieldInspection */
-        if (!isset($this->options->plugins['activated']['Dynamics'])) {
+        if (!isset($this->options->plugins['activated']['DynamicsAbstarct'])) {
             return new IXR_Error(403, "没有启用我的动态插件");
         }
 
@@ -2301,7 +2306,7 @@ EOF;
 
             $api = array(
                 /** Typecho API */
-                'typecho.demo' => array($this, 'GetDemo'),
+                'typecho.getManifest' => array($this, 'GetManifest'),
                 'typecho.getUser' => array($this, 'GetUser'),
                 'typecho.getStat' => array($this, 'GetStat'),
                 'typecho.newPost' => array($this, 'NewPost'),
