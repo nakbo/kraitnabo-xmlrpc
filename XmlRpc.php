@@ -1,4 +1,5 @@
-<?php /** @noinspection DuplicatedCode */
+<?php
+/** @noinspection DuplicatedCode */
 /** @noinspection PhpUndefinedFunctionInspection */
 /** @noinspection PhpUnused */
 /** @noinspection PhpRedundantCatchClauseInspection */
@@ -17,7 +18,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
 /**
  * XmlRpc接口
  *
- * @author blankyao
+ * @author Krait (https://github.com/kraity)
  * @category typecho
  * @package Widget
  * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
@@ -69,7 +70,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * 如果这里没有重载, 每次都会被默认执行
      *
      * @access public
-     * @param bool $run 是否执行
+     * @param boolean $run 是否执行
      * @return void
      */
     public function execute($run = false)
@@ -81,11 +82,20 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         $this->security->enable(false);
     }
 
+    /**
+     * XmlRpc清单
+     * @param $v
+     * @return array
+     */
     public function NbGetManifest($v)
     {
         return Widget_XmlRpc::NbGetManifestStatic();
     }
 
+    /**
+     * 静态经清单
+     * @return array
+     */
     public static function NbGetManifestStatic()
     {
         return array(
@@ -100,11 +110,11 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * 检查权限
      *
      * @access public
-     * @param $union
-     * @param $name
-     * @param $password
+     * @param string $union
+     * @param string $name
+     * @param string $password
      * @param string $level
-     * @return bool
+     * @return boolean
      * @throws Typecho_Widget_Exception
      */
     public function access($union, $name, $password, $level = 'contributor')
@@ -136,8 +146,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      *
      * @access public
      * @param string $union
-     * @param $userName
-     * @param $password
+     * @param string $userName
+     * @param string $password
      * @return array|IXR_Error
      * @throws Typecho_Widget_Exception
      * @throws Typecho_Exception
@@ -165,8 +175,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     /**
      * markdown
-     * @param $text
-     * @return false|string
+     * @param string $text
+     * @return string
      */
     public function commonParseMarkdown($text)
     {
@@ -259,8 +269,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     /**
      * 统计文字字数
-     * @param $from
-     * @param $type
+     * @param string $from
+     * @param string $type
      * @return int
      */
     public function getCharacters($from, $type)
@@ -278,8 +288,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     /**
      * 获取附件
-     * @param $cid
-     * @return false|string
+     * @param string $cid
+     * @return string
      */
     public function commonFields($cid)
     {
@@ -299,8 +309,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
     /**
      * 统一评论
-     * @param $comments
-     * @param $struct
+     * @param array $comments
+     * @param array $struct
      * @return array
      */
     public function commonCommentsStruct($comments, $struct)
@@ -323,6 +333,55 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
             'permalink' => "",
             'title' => $comments['title'],
+        );
+    }
+
+    /**
+     * 统一分类
+     * @param $categories
+     * @param $struct
+     * @return array
+     */
+    public function commonCategoryTagStruct($categories, $struct)
+    {
+        return array(
+            'mid' => $categories->mid,
+            'name' => $categories->name,
+            'slug' => $categories->slug,
+            'type' => $categories->type,
+            'description' => $categories->description,
+            'count' => $categories->count,
+            'order' => $categories->order,
+            'parent' => $categories->parent,
+
+            'permalink' => $categories->permalink,
+        );
+    }
+
+    /**
+     * 统一附件
+     * @param $attachments
+     * @param $struct
+     * @return array
+     */
+    public function commonMediasStruct($attachments, $struct)
+    {
+        return array(
+            'cid' => $attachments->cid,
+            'title' => $attachments->title,
+            'slug' => $attachments->slug,
+            'created' => $attachments->created,
+            'size' => $attachments->attachment->size,
+            'url' => $attachments->attachment->url,
+            'path' => $attachments->attachment->path,
+            'mime' => $attachments->attachment->mime,
+            'commentsNum' => $attachments->commentsNum,
+            'description' => $attachments->attachment->description,
+
+            'parent_title' => $attachments->parentPost->title,
+            'parent_cid' => $attachments->parentPost->cid,
+            'parent_type' => $attachments->parentPost->type,
+
         );
     }
 
@@ -458,7 +517,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $userName
      * @param string $password
      * @param int $postId
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -491,7 +550,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $userName
      * @param string $password
      * @param int $postId
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -511,7 +570,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -573,7 +632,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -594,7 +653,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $content
+     * @param array $content
      * @return array|IXR_Error|void
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -727,7 +786,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param mixed $userName
      * @param mixed $password
-     * @param $postId
+     * @param int $postId
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -841,7 +900,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param integer $commentId
+     * @param int $commentId
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -941,7 +1000,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param integer $commentId
+     * @param int $commentId
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -963,7 +1022,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return new IXR_Error(403, _t('没有获取评论的权限'));
         }
 
-        $commentsStruct = $this->commonCommentsStruct($comments, null);
+        $commentsStruct = $this->commonCommentsStruct((array)$comments, null);
 
         return array(true, $commentsStruct);
     }
@@ -975,7 +1034,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param integer $commentId
+     * @param int $commentId
      * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
@@ -1039,7 +1098,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param mixed $data
+     * @param array $data
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1089,22 +1148,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
     }
 
-    public function commonCategoryTagStruct($categories, $struct)
-    {
-        return array(
-            'mid' => $categories->mid,
-            'name' => $categories->name,
-            'slug' => $categories->slug,
-            'type' => $categories->type,
-            'description' => $categories->description,
-            'count' => $categories->count,
-            'order' => $categories->order,
-            'parent' => $categories->parent,
-
-            'permalink' => $categories->permalink,
-        );
-    }
-
     /**
      * 获取所有的分类
      *
@@ -1139,7 +1182,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $category
+     * @param array $category
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1176,7 +1219,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $category
+     * @param array $category
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1223,7 +1266,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param integer $categoryId
+     * @param int $categoryId
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1282,7 +1325,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $content
+     * @param array $content
      * @return array|IXR_Error|void
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1303,7 +1346,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $content
+     * @param array $content
      * @return array|IXR_Error|void
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1408,27 +1451,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         return array(true, $struct);
     }
 
-    public function commonMediasStruct($attachments, $struct)
-    {
-        return array(
-            'cid' => $attachments->cid,
-            'title' => $attachments->title,
-            'slug' => $attachments->slug,
-            'created' => $attachments->created,
-            'size' => $attachments->attachment->size,
-            'url' => $attachments->attachment->url,
-            'path' => $attachments->attachment->path,
-            'mime' => $attachments->attachment->mime,
-            'commentsNum' => $attachments->commentsNum,
-            'description' => $attachments->attachment->description,
-
-            'parent_title' => $attachments->parentPost->title,
-            'parent_cid' => $attachments->parentPost->cid,
-            'parent_type' => $attachments->parentPost->type,
-
-        );
-    }
-
     /**
      * 获取媒体文件
      *
@@ -1436,7 +1458,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1519,7 +1541,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1555,7 +1577,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1599,7 +1621,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1669,7 +1691,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1774,7 +1796,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1871,7 +1893,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
@@ -1935,7 +1957,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @param string $union
      * @param string $userName
      * @param string $password
-     * @param $struct
+     * @param array $struct
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
