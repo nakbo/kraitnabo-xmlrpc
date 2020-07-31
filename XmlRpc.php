@@ -1383,24 +1383,24 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         $struct = array();
         foreach ($options as $option) {
-            $select = $this->db->select()->from('table.options')
-                ->where('name = ?', $option)
-                ->where('user = ? ', 0)
-                ->orWhere('user = ?', $this->uid);
-            /** 真怪，经过测试 uid 和 userId 关系不唯一 */
-            if ($this->uid > 1) {
-                $select->orWhere('user = ?', $this->uid - 1);
-            }
-            $select->order('user', Typecho_Db::SORT_DESC);
-            $os = $this->db->fetchAll($select);
-            if (!empty($os)) {
-                $o = $os[0];
-                $struct[] = array(
-                    $o['name'],
-                    $o['user'],
-                    $o['value']
+            if (isset($this->options->{$option})) {
+                $o = array(
+                    'name' => $option,
+                    'user' => $this->uid,
+                    'value' => $this->options->{$option}
                 );
+            } else {
+                $select = $this->db->select()->from('table.options')
+                    ->where('name = ?', $option)
+                    ->where('user = ? ', 0);
+                $select->order('user', Typecho_Db::SORT_DESC);
+                $o = $this->db->fetchRow($select);
             }
+            $struct[] = array(
+                $o['name'],
+                $o['user'],
+                $o['value']
+            );
         }
 
         return array(true, $struct);
