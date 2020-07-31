@@ -1427,24 +1427,13 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         $struct = array();
         foreach ($options as $object) {
-            $select = $this->db->select()->from('table.options')
-                ->where('name = ?', $object[0]);
-            if (!empty($object[1])) {
-                $select->where('user = ?', $object[1]);
-            }
-            $os = $this->db->fetchAll($select);
-            if (!empty($os)) {
-                foreach ($os as $o) {
-                    if ($this->db->query($this->db->update('table.options')
-                            ->rows(array('value' => $object[2]))
-                            ->where('name = ?', $o['name'])
-                            ->where('user = ?', $object[1])) > 0) {
-                        $struct[] = array(
-                            $o['name'],
-                            $object[2]
-                        );
-                    }
-                }
+            if ($this->db->query($this->db->update('table.options')
+                    ->rows(array('value' => $object[2]))
+                    ->where('name = ?', $object[0])) > 0) {
+                $struct[] = array(
+                    $object[0],
+                    $object[2]
+                );
             }
         }
 
