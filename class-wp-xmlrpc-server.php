@@ -163,6 +163,13 @@ class wp_xmlrpc_server extends IXR_Server
             'kraitnabo.comment.edit' => array($this, 'NbEditComment'),
             'kraitnabo.comment.delete' => array($this, 'NbDeleteComment'),
             'kraitnabo.comments.get' => array($this, 'NbGetComments'),
+            'kraitnabo.media.new' => array($this, 'NbNewMedia'),
+            'kraitnabo.media.edit' => array($this, "NbEditMedia"),
+            'kraitnabo.media.delete' => array($this, "NbDeleteMedia"),
+            'kraitnabo.medias.get' => array($this, 'NbGetMedias'),
+            'kraitnabo.medias.clear' => array($this, "NbClearMedias"),
+            'kraitnabo.categories.get' => array($this, 'NbGetCategories'),
+            'kraitnabo.tags.get' => array($this, 'NbGetTags'),
             'kraitnabo.options.get' => array($this, 'NbGetOptions'),
 
             // Pingback.
@@ -7317,6 +7324,10 @@ class wp_xmlrpc_server extends IXR_Server
         );
     }
 
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
     public function NbGetStat($args)
     {
         if (!$this->minimum_args($args, 3)) {
@@ -7359,7 +7370,7 @@ class wp_xmlrpc_server extends IXR_Server
                 "textSize" => "0",
             ),
             "categories" => array(
-                "all" => "1",
+                "all" => "0",
                 "archive" => "0"
             ),
             "tags" => array(
@@ -8007,6 +8018,78 @@ class wp_xmlrpc_server extends IXR_Server
      * @param $args
      * @return array|IXR_Error
      */
+    public function NbEditComment($args)
+    {
+        if (!$this->minimum_args($args, 5)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $comment_ID = (int)$args[3];
+        $content_struct = $args[4];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        if (!get_comment($comment_ID)) {
+            return new IXR_Error(404, __('Invalid comment ID.'));
+        }
+
+        if (!current_user_can('edit_comment', $comment_ID)) {
+            return new IXR_Error(403, __('Sorry, you are not allowed to moderate or edit this comment.'));
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.comment.edit');
+        $comment = array(
+            'comment_ID' => $comment_ID,
+        );
+
+        if (isset($content_struct['status'])) {
+            $statuses = get_comment_statuses();
+            $statuses = array_keys($statuses);
+            $content_struct['status'] = $this->toWpStatus($content_struct['status'], "comment");
+
+            if (!in_array($content_struct['status'], $statuses)) {
+                return new IXR_Error(401, __('Invalid comment status.'));
+            }
+
+            $comment['comment_approved'] = $content_struct['status'];
+        }
+
+        if (isset($content_struct['text'])) {
+            $comment['comment_content'] = $content_struct['text'];
+        }
+
+        if (isset($content_struct['author'])) {
+            $comment['comment_author'] = $content_struct['author'];
+        }
+
+        if (isset($content_struct['url'])) {
+            $comment['comment_author_url'] = $content_struct['url'];
+        }
+
+        if (isset($content_struct['mail'])) {
+            $comment['comment_author_email'] = $content_struct['mail'];
+        }
+
+        $result = wp_update_comment($comment);
+        if (is_wp_error($result)) {
+            return new IXR_Error(500, __("Sorry"));
+        }
+
+        if (!$result) {
+            return new IXR_Error(500, __('Sorry, the comment could not be updated.'));
+        }
+
+        return array(true, null);
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
     public function NbNewComment($args)
     {
         if (!$this->minimum_args($args, 5)) {
@@ -8189,6 +8272,306 @@ class wp_xmlrpc_server extends IXR_Server
     }
 
     /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbNewMedia($args)
+    {
+        global $wpdb;
+
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $data = $args[3];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        $name = sanitize_file_name($data['name']);
+        $type = $data['mime'];
+
+        // 南博中上传附件是经过base64编码后传输的，这里需要解码
+        if (isset($data['bytes'])) {
+            $bits = base64_decode($data['bytes']);
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.media.new');
+
+        if (!current_user_can('upload_files')) {
+            $this->error = new IXR_Error(401, __('Sorry, you are not allowed to upload files.'));
+            return $this->error;
+        }
+
+        if (is_multisite() && upload_is_user_over_quota(false)) {
+            $this->error = new IXR_Error(
+                401,
+                sprintf(
+                /* translators: %s: Allowed space allocation. */
+                    __('Sorry, you have used your space allocation of %s. Please delete some files to upload more files.'),
+                    size_format(get_space_allowed() * MB_IN_BYTES)
+                )
+            );
+            return $this->error;
+        }
+
+        $upload_err = apply_filters('pre_upload_error', false);
+        if ($upload_err) {
+            return new IXR_Error(500, $upload_err);
+        }
+
+        $upload = wp_upload_bits($name, null, $bits);
+        if (!empty($upload['error'])) {
+            /* translators: 1: File name, 2: Error message. */
+            $errorString = sprintf(__('Could not write file %1$s (%2$s).'), $name, $upload['error']);
+            return new IXR_Error(500, $errorString);
+        }
+
+        $post_id = 0;
+        if (!empty($data['post_id'])) {
+            $post_id = (int)$data['post_id'];
+
+            if (!current_user_can('edit_post', $post_id)) {
+                return new IXR_Error(401, __('Sorry, you are not allowed to edit this post.'));
+            }
+        }
+
+        $attachment = array(
+            'post_title' => $name,
+            'post_content' => '',
+            'post_type' => 'attachment',
+            'post_parent' => $post_id,
+            'post_mime_type' => $type,
+            'guid' => $upload['url'],
+        );
+
+        // Save the data.
+        $id = wp_insert_attachment($attachment, $upload['file'], $post_id);
+        wp_update_attachment_metadata($id, wp_generate_attachment_metadata($id, $upload['file']));
+
+        $struct = $this->_prepare_media_item(get_post($id));
+
+        // Deprecated values.
+//        $struct['id'] = $struct['attachment_id'];
+//        $struct['file'] = $struct['title'];
+//        $struct['url'] = $struct['link'];
+
+        return array(true,
+            array(
+                'name' => $struct['title'],
+                'url' => $struct['link']
+            )
+        );
+
+    }
+
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbDeleteMedia($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $struct = $args[3];
+        $post_id = (int)$struct["cids"][0];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.media.delete');
+
+        $post = get_post($post_id, ARRAY_A);
+        if (empty($post['ID'])) {
+            return new IXR_Error(404, __('Invalid post ID.'));
+        }
+
+        if (!current_user_can('delete_post', $post_id)) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to delete this post.'));
+        }
+
+        $result = wp_delete_post($post_id);
+
+        if (!$result) {
+            return new IXR_Error(500, __('Sorry, the post could not be deleted.'));
+        }
+
+        return array(true, null);
+
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetMedias($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $struct = $args[3];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        if (!current_user_can('upload_files')) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to upload files.'));
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.medias.get');
+
+        $parent_id = (isset($struct['parent'])) ? absint($struct['parent']) : '';
+        $mime_type = (isset($struct['mime'])) ? $struct['mime'] : '';
+        $offset = (isset($struct['offset'])) ? absint($struct['offset']) : 0;
+        $number = (isset($struct['number'])) ? absint($struct['number']) : 10;
+
+        $attachments = get_posts(
+            array(
+                'post_type' => 'attachment',
+                'post_parent' => $parent_id,
+                'offset' => $offset,
+                'numberposts' => $number,
+                'post_mime_type' => $mime_type,
+            )
+        );
+
+        $attachments_struct = array();
+
+        foreach ($attachments as $media_item) {
+            $attachments_struct[] = array(
+                'cid' => strval($media_item->ID),
+                'title' => $media_item->post_title,
+                'slug' => $media_item->post_name,
+                'created' => strtotime($media_item->post_date) - 28800,
+                'size' => "0",
+                'url' => wp_get_attachment_url($media_item->ID),
+                'path' => wp_get_attachment_url($media_item->ID),
+                'mime' => $media_item->post_mime_type,
+                'commentsNum' => "0",
+                'description' => $media_item->post_content,
+
+                'parent_title' => $media_item->post_title,
+                'parent_cid' => "0",
+                'parent_type' => "page",
+            );
+        }
+
+        return array(true,
+            $attachments_struct
+        );
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetCategories($args)
+    {
+        if (!$this->minimum_args($args, 3)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        if (!current_user_can('edit_posts')) {
+            return new IXR_Error(401, __('Sorry, you must be able to edit posts on this site in order to view categories.'));
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.categories.get');
+
+        $categories_struct = array();
+        $cats = get_categories(array('get' => 'all'));
+        if ($cats) {
+            foreach ($cats as $cat) {
+                $cats[] = array(
+                    'mid' => $cat->term_id,
+                    'name' => $cat->name,
+                    'slug' => $cat->slug,
+                    'type' => "category",
+                    'description' => $cat->description,
+                    'count' => $cat->count,
+                    'order' => "0",
+                    'parent' => $cat->parent,
+
+                    'permalink' => get_tag_link($cat->term_id),
+                );
+            }
+        }
+
+        return array(true,
+            $categories_struct
+        );
+
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetTags($args)
+    {
+        if (!$this->minimum_args($args, 3)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        if (!current_user_can('edit_posts')) {
+            return new IXR_Error(401, __('Sorry, you must be able to edit posts on this site in order to view tags.'));
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.tags.get');
+
+        $tags = array();
+
+        $all_tags = get_tags();
+        if ($all_tags) {
+            foreach ((array)$all_tags as $tag) {
+                $tags[] = array(
+                    'mid' => $tag->term_id,
+                    'name' => $tag->name,
+                    'slug' => $tag->slug,
+                    'type' => "tag",
+                    'description' => $tag->description,
+                    'count' => $tag->count,
+                    'order' => "0",
+                    'parent' => $tag->parent,
+
+                    'permalink' => get_tag_link($tag->term_id),
+                );
+            }
+        }
+
+        return array(true,
+            $tags
+        );
+
+    }
+
+    /**
      * @param $comment
      * @return array
      */
@@ -8230,7 +8613,7 @@ class wp_xmlrpc_server extends IXR_Server
      * @return string
      * @noinspection PhpDuplicateSwitchCaseBodyInspection
      */
-    private function toNbStatus($status, $type = 'post')
+    public function toNbStatus($status, $type = 'post')
     {
         if ('post' == $type) {
             /** 文章状态 */
