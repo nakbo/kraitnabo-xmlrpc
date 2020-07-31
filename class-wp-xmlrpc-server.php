@@ -155,6 +155,14 @@ class wp_xmlrpc_server extends IXR_Server
             'kraitnabo.post.get' => array($this, 'NbGetPost'),
             'kraitnabo.post.delete' => array($this, 'NbDeletePost'),
             'kraitnabo.posts.get' => array($this, 'NbGetPosts'),
+            'kraitnabo.page.new' => array($this, 'NbNewPage'),
+            'kraitnabo.page.edit' => array($this, 'NbEditPage'),
+            'kraitnabo.page.get' => array($this, 'NbGetPage'),
+            'kraitnabo.pages.get' => array($this, 'NbGetPages'),
+            'kraitnabo.comment.new' => array($this, 'NbNewComment'),
+            'kraitnabo.comment.edit' => array($this, 'NbEditComment'),
+            'kraitnabo.comment.delete' => array($this, 'NbDeleteComment'),
+            'kraitnabo.comments.get' => array($this, 'NbGetComments'),
             'kraitnabo.options.get' => array($this, 'NbGetOptions'),
 
             // Pingback.
@@ -7172,35 +7180,200 @@ class wp_xmlrpc_server extends IXR_Server
         return apply_filters('xmlrpc_pingback_error', new IXR_Error($code, $message));
     }
 
+    public $uid;
 
+    /**
+     * 检查权限
+     * @param $union
+     * @param $name
+     * @param $password
+     * @param string $level
+     * @return bool|mixed|void|WP_Error
+     */
+    public function access($union, $name, $password, $level = 'contributor')
+    {
+        $enabled = apply_filters('pre_option_enable_xmlrpc', false);
+        if (false === $enabled) {
+            $enabled = apply_filters('option_enable_xmlrpc', true);
+        }
+
+        $enabled = apply_filters('xmlrpc_enabled', $enabled);
+        if (!$enabled) {
+            $this->error = new IXR_Error(405, sprintf(__('XML-RPC services are disabled on this site.')));
+            return false;
+        }
+        if ($this->auth_failed) {
+            $user = new WP_Error('login_prevented');
+        } else {
+            $user = wp_authenticate($name, $password);
+        }
+
+        if (is_wp_error($user)) {
+            $this->error = new IXR_Error(403, __('Incorrect username or password.'));
+            $this->auth_failed = true;
+            $this->error = apply_filters('xmlrpc_login_error', $this->error, $user);
+            return false;
+        }
+        wp_set_current_user($user->ID);
+        $this->uid = $user->ID;
+        return $user;
+    }
+
+    /**
+     * @param $args
+     * @return array
+     */
     public function NbGetManifest($args)
     {
         return array(
             "engineName" => "wordpress",
-            "versionCode" => 12,
-            "versionName" => "2.1",
+            "versionCode" => 13,
+            "versionName" => "2.2",
             "manifest" => $args[0]
         );
     }
 
+    /**
+     * @param $status
+     * @param string $type
+     * @return string
+     * @noinspection PhpDuplicateSwitchCaseBodyInspection
+     */
+    private function toWpStatus($status, $type = 'post')
+    {
+        if ('post' == $type) {
+            /** 文章状态 */
+            switch ($status) {
+                case 'waiting':
+                    return 'pending';
+                case 'publish':
+                case 'draft':
+                case 'private':
+                    return $status;
+                default:
+                    return 'publish';
+            }
+        } else if ('page' == $type) {
+            switch ($status) {
+                case 'publish':
+                case 'draft':
+                case 'private':
+                    return $status;
+                default:
+                    return 'publish';
+            }
+        } else if ('comment' == $type) {
+            switch ($status) {
+                case 'publish':
+                case 'approved':
+                    return 'approve';
+                case 'waiting':
+                    return 'hold';
+                case 'spam':
+                    return $status;
+                default:
+                    return 'approve';
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
     public function NbGetUser($args)
     {
-        $args[3] = $args[0];
-        $user = $this->wp_getUser($args);
+        if (!$this->minimum_args($args, 3)) {
+            return $this->error;
+        }
+        $this->escape($args);
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.user.get');
+
+        if (!current_user_can('edit_user', $this->uid)) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to edit this user.'));
+        }
+
         return array(true,
             array(
-                'uid' => $user["user_id"],
-                'name' => $user["username"],
-                'mail' => $user["email"],
-                'screenName' => $user["nickname"],
-                'url' => $user[""],
-                'created' => time(),
+                'uid' => $user->ID,
+                'name' => $user->user_login,
+                'mail' => $user->user_email,
+                'screenName' => $user->nickname,
+                'url' => $user->user_url,
+                'created' => strtotime($user->user_registered),
                 'activated' => time(),
                 'logged' => time(),
-                'group' => $user["roles"][0],
-                'authCode' => $user[""]
+                'group' => $user->roles[0],
+                'authCode' => ""
             )
         );
+    }
+
+    public function NbGetStat($args)
+    {
+        if (!$this->minimum_args($args, 3)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        $post = wp_count_posts();
+        $page = wp_count_posts('page');
+
+        $statArray = array(
+            "post" => array(
+                "all" => $post->publish + $post->pending + $post->draft + $post->future + $post->private + $post->inherit,
+                "publish" => $post->publish,
+                "waiting" => $post->pending,
+                "draft" => $post->draft,
+                "hidden" => $post->future,
+                "private" => $post->private,
+                "textSize" => "0"
+            ),
+            "page" => array(
+                "all" => $page->publish + $page->pending + $page->draft + $page->future + $page->private + $page->inherit,
+                "publish" => $page->publish,
+                "hidden" => $page->future,
+                "draft" => $page->draft,
+                "textSize" => "0"
+            ),
+            "comment" => array(
+                "all" => "0",
+                "me" => "0",
+                "publish" => "0",
+                "waiting" => "0",
+                "spam" => "0",
+                "textSize" => "0",
+            ),
+            "categories" => array(
+                "all" => "1",
+                "archive" => "0"
+            ),
+            "tags" => array(
+                "all" => "0",
+                "archive" => "0"
+            ),
+            "medias" => array(
+                "all" => "0",
+                "archive" => "0"
+            )
+        );
+
+        return array(true, $statArray);
+
     }
 
     public function NbGetOptions($args)
@@ -7245,144 +7418,915 @@ class wp_xmlrpc_server extends IXR_Server
         return array(true, $struct);
     }
 
-    public function NbNewPost($args)
-    {
-        $note = $args[3];
-        $argsNew = array(
-            $args[0],
-            $args[1],
-            $args[2],
-            $this->structNoteTemplate($args[3], $note["cid"])
-        );
-        return array(true,
-            $this->wp_newPost($argsNew)
-        );
-    }
-
-    public function NbEditPost($args)
-    {
-        $note = $args[3];
-        $argsNew = array(
-            $args[0],
-            $args[1],
-            $args[2],
-            intval($note["cid"]),
-            $this->structNoteTemplate($args[3], $note["cid"])
-        );
-
-        return array(
-            $this->wp_editPost($argsNew),
-            $note["cid"]
-        );
-    }
-
-    public function NbGetPost($args)
-    {
-        $argsNew = array(
-            $args[0],
-            $args[1],
-            $args[2],
-            $args[3]
-        );
-        return array(true,
-            $this->structNbNote($this->wp_getPost($argsNew))
-        );
-    }
-
-    public function NbGetPosts($args)
-    {
-        $posts = $this->wp_getPosts($args);
-        $struct = array();
-        foreach ($posts as $content) {
-            $struct[] = $this->structNbNote($content);
-        }
-        return array(true,
-            $struct
-        );
-    }
-
-    public function structNbNote($content)
+    /**
+     * @param $struct
+     * @return array
+     */
+    private function structNoteTemplate($struct)
     {
         return array(
-            'cid' => $content["post_id"],
-            'title' => $content['post_title'],
-            'slug' => $content['post_name'],
-            'created' => "" . $content['post_date_gmt']->getTimestamp(),
-            'modified' => "" . $content['post_modified_gmt']->getTimestamp(),
-            'text' => $content['post_content'],
-            'order' => "0",
-            'authorId' => $content['post_author'],
-            'template' => "",
-            'type' => $content['post_type'],
-            'status' => $this->structStatusWpToNb($content['post_status']),
-            'password' => $content['post_password'],
-            'commentsNum' => $content['commentsNum'],
-            'allowComment' => $content['comment_status'] == "open" ? "1" : "0",
-            'allowPing' => "0",
-            'allowFeed' => "0",
-            'parent' => $content['post_parent'],
-
-            'permalink' => $content['link'],
-            'description' => "",
-            'fields' => json_encode(array()),
-            'categories' => "暂不支持",
-            'tags' => "暂不支持",
-        );
-    }
-
-    public function structStatusWpToNb($status)
-    {
-        switch ($status) {
-            case "publish":
-                return "publish";
-            case "private":
-                return "private";
-            case "pending":
-                return "waiting";
-            default:
-                return $status;
-        }
-    }
-
-    public function structStatusNbToWp($status)
-    {
-        switch ($status) {
-            case "publish":
-                return "publish";
-            case "private":
-                return "private";
-            case "waiting":
-                return "pending";
-            default:
-                return "draft";
-        }
-    }
-
-    public function structNoteTemplate($note, $id)
-    {
-        return array(
-            "post_type" => $note["type"],
-            "post_status" => $this->structStatusNbToWp($note["status"]),
-            "post_title" => $note["title"],
-            "post_content" => $note["text"],
-            "post_password" => $note["password"],
+            "post_type" => $struct["type"],
+            "post_status" => $this->toWpStatus($struct["status"]),
+            "post_title" => $struct["title"],
+            "post_content" => $struct["text"],
+            "post_password" => $struct["password"],
             'post_author' => null,
             'post_excerpt' => null,
             'post_date' => null,
             'post_date_gmt' => null,
             'post_format' => null,
-            'post_name' => $note["slug"],
+            'post_name' => $struct["slug"],
             'post_thumbnail' => null,
             'post_parent' => null,
-            'ping_status' => $note["allow_pings"] == 1 ? "open" : "closed",
-            'comment_status' => $note["allow_comments"] == 1 ? "open" : "closed",
+            'ping_status' => $struct["allow_pings"] == 1 ? "open" : "closed",
+            'comment_status' => $struct["allow_comments"] == 1 ? "open" : "closed",
             'custom_fields' => null,
 //            'terms_names' => $note["tags"],
 //            'terms' => $note["categories"],
             'sticky' => null,
             'enclosure' => null,
-            'ID' => $id
+            'ID' => $struct["cid"]
         );
     }
 
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbNewPost($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $content_struct = $this->structNoteTemplate($args[3]);
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        if (isset($content_struct['post_date']) && !($content_struct['post_date'] instanceof IXR_Date)) {
+            $content_struct['post_date'] = $this->_convert_date($content_struct['post_date']);
+        }
+
+        if (isset($content_struct['post_date_gmt']) && !($content_struct['post_date_gmt'] instanceof IXR_Date)) {
+            if ('0000-00-00 00:00:00' === $content_struct['post_date_gmt'] || isset($content_struct['post_date'])) {
+                unset($content_struct['post_date_gmt']);
+            } else {
+                $content_struct['post_date_gmt'] = $this->_convert_date($content_struct['post_date_gmt']);
+            }
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.post.new');
+        unset($content_struct['ID']);
+
+        return array(true,
+            $this->_insert_post($user, $content_struct)
+        );
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error|string
+     */
+    public function NbEditPost($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $struct = $args[3];
+        $post_id = $struct['cid'];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        $content_struct = $this->structNoteTemplate($struct);
+        do_action('xmlrpc_call', 'kraitnabo.post.edit');
+        $post = get_post($post_id, ARRAY_A);
+
+        if (empty($post['ID'])) {
+            return new IXR_Error(404, __('Invalid post ID.'));
+        }
+
+        if (isset($content_struct['if_not_modified_since'])) {
+            if (mysql2date('U', $post['post_modified_gmt']) > $content_struct['if_not_modified_since']->getTimestamp()) {
+                return new IXR_Error(409, __('There is a revision of this post that is more recent.'));
+            }
+        }
+
+        $post['post_date'] = $this->_convert_date($post['post_date']);
+
+        if ('0000-00-00 00:00:00' === $post['post_date_gmt'] || isset($content_struct['post_date'])) {
+            unset($post['post_date_gmt']);
+        } else {
+            $post['post_date_gmt'] = $this->_convert_date($post['post_date_gmt']);
+        }
+
+        if (!isset($content_struct['post_date'])) {
+            unset($post['post_date']);
+        }
+
+        $this->escape($post);
+        $merged_content_struct = array_merge($post, $content_struct);
+
+        $retval = $this->_insert_post($user, $merged_content_struct);
+        if ($retval instanceof IXR_Error) {
+            return $retval;
+        }
+
+        return array(
+            true,
+            $post_id
+        );
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbEditPage($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $struct = $args[3];
+        $page_id = $struct['cid'];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.page.edit');
+
+        // Get the page data and make sure it is a page.
+        $actual_page = get_post($page_id, ARRAY_A);
+        if (!$actual_page || ('page' !== $actual_page['post_type'])) {
+            return new IXR_Error(404, __('Sorry, no such page.'));
+        }
+
+        if (!current_user_can('edit_page', $page_id)) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to edit this page.'));
+        }
+
+        $content_struct = $struct;
+        $content_struct['type'] = 'page';
+        $publish = isset($args[4]) ? $args[4] : 0;
+        $postdata = $actual_page;
+
+        if (!in_array($postdata['post_type'], array('post', 'page'))) {
+            return new IXR_Error(401, __('Invalid post type.'));
+        }
+
+        $this->escape($postdata);
+
+        $ID = $postdata['ID'];
+        $post_content = $struct['text'];
+        $post_title = $struct['title'];
+        $post_excerpt = $postdata['post_excerpt'];
+        $post_password = isset($struct['password']) ? $struct['password'] : null;
+        $post_parent = $postdata['post_parent'];
+        $post_type = $postdata['post_type'];
+        $menu_order = $postdata['menu_order'];
+        $ping_status = $postdata['ping_status'];
+        $comment_status = $postdata['comment_status'];
+
+        $post_name = $postdata['post_name'];
+        if (isset($content_struct['slug'])) {
+            $post_name = $content_struct['slug'];
+        }
+
+        if (isset($content_struct['password'])) {
+            $post_password = $content_struct['password'];
+        }
+
+//        if (isset($content_struct['wp_page_parent_id'])) {
+//            $post_parent = $content_struct['wp_page_parent_id'];
+//        }
+
+        if (isset($content_struct['order'])) {
+            $menu_order = $content_struct['order'];
+        }
+
+        $page_template = null;
+        if (!empty($content_struct['template'])) {
+            $page_template = $content_struct['template'];
+        }
+
+        $post_author = $postdata['post_author'];
+
+        if (isset($content_struct['allow_comments'])) {
+            switch ((int)$content_struct['allow_comments']) {
+                case 0:
+                case 2:
+                    $comment_status = 'closed';
+                    break;
+                case 1:
+                    $comment_status = 'open';
+                    break;
+                default:
+                    $comment_status = get_default_comment_status($post_type);
+                    break;
+            }
+
+        }
+
+        if (isset($content_struct['allow_pings'])) {
+            switch ((int)$content_struct['allow_pings']) {
+                case 0:
+                    $ping_status = 'closed';
+                    break;
+                case 1:
+                    $ping_status = 'open';
+                    break;
+                default:
+                    $ping_status = get_default_comment_status($post_type, 'pingback');
+                    break;
+            }
+        }
+
+        $post_category = array();
+        if (isset($content_struct['categories'])) {
+            $catnames = $content_struct['categories'];
+            if (is_array($catnames)) {
+                foreach ($catnames as $cat) {
+                    $post_category[] = get_cat_ID($cat);
+                }
+            }
+        }
+
+        $post_status = $publish ? 'publish' : 'draft';
+
+        if (isset($content_struct["status"])) {
+            switch ($this->toWpStatus($content_struct["status"], "page")) {
+                case 'draft':
+                case 'pending':
+                case 'private':
+                case 'publish':
+                    $post_status = $content_struct["status"];
+                    break;
+                default:
+                    $post_status = $publish ? 'publish' : 'draft';
+                    break;
+            }
+        }
+
+        $tags_input = isset($content_struct['tags']) ? $content_struct['tags'] : null;
+
+        if ('publish' === $post_status || 'private' === $post_status) {
+            if ('page' == $post_type && !current_user_can('publish_pages')) {
+                return new IXR_Error(401, __('Sorry, you are not allowed to publish this page.'));
+            } elseif (!current_user_can('publish_posts')) {
+                return new IXR_Error(401, __('Sorry, you are not allowed to publish this post.'));
+            }
+        }
+
+        $post_date = $postdata['post_date'];
+        $post_date_gmt = $postdata['post_date_gmt'];
+
+        $newpost = compact('ID', 'post_content', 'post_title', 'post_category', 'post_status', 'post_excerpt', 'comment_status', 'ping_status', 'edit_date', 'post_date', 'post_date_gmt', 'to_ping', 'post_name', 'post_password', 'post_parent', 'menu_order', 'post_author', 'tags_input', 'page_template');
+        $result = wp_update_post($newpost, true);
+        if (is_wp_error($result)) {
+            return new IXR_Error(500, $result->get_error_message());
+        }
+
+        if (!$result) {
+            return new IXR_Error(500, __('Sorry, the post could not be updated.'));
+        }
+
+//            if (isset($content_struct['custom_fields'])) {
+//                $this->set_custom_fields($post_ID, $content_struct['custom_fields']);
+//            }
+
+        // Handle enclosures.
+        $thisEnclosure = isset($content_struct['enclosure']) ? $content_struct['enclosure'] : null;
+        $this->add_enclosure_if_new($page_id, $thisEnclosure);
+        $this->attach_uploads($ID, $post_content);
+
+        return array(
+            true, $ID
+        );
+
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetPage($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $page_id = (int)$args[3];
+//        $struct = $args[4];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        $page = get_post($page_id);
+        if (!$page) {
+            return new IXR_Error(404, __('Invalid post ID.'));
+        }
+
+        if (!current_user_can('edit_page', $page_id)) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to edit this page.'));
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.page.get');
+
+        // If we found the page then format the data.
+        if ($page->ID && ('page' === $page->post_type)) {
+            return array(true,
+                array(
+                    'cid' => $page->ID,
+                    'title' => $page->post_title,
+                    'slug' => $page->post_name,
+                    'created' => strtotime($page->post_date) - 28800,
+                    'modified' => strtotime($page->post_date) - 28800,
+                    'text' => $page->post_content,
+                    'order' => "0",
+                    'authorId' => (string)$user->ID,
+                    'template' => "",
+                    'type' => "page",
+                    'status' => "publish",
+                    'password' => $page->post_password,
+                    'commentsNum' => "0",
+                    'allowComment' => comments_open($page->ID) ? "1" : "0",
+                    'allowPing' => pings_open($page->ID) ? "1" : "0",
+                    'allowFeed' => "0",
+                    'parent' => $page->post_parent,
+
+                    'permalink' => get_permalink($page->ID),
+                    'description' => "",
+                    'fields' => json_encode(array()),
+                    'categories' => "",
+                    'tags' => "",
+                )
+            );
+        } else {
+            return new IXR_Error(404, __('Sorry, no such page.'));
+        }
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetPost($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $cid = (int)$args[3];
+        $struct = $args[4];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.post.get');
+
+        $post = get_post($cid, ARRAY_A);
+
+        if (empty($post['ID'])) {
+            return new IXR_Error(404, __('Invalid post ID.'));
+        }
+
+        if (!current_user_can('edit_post', $cid)) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to edit this post.'));
+        }
+
+        return array(true,
+            $this->commonNoteStruct($post, $struct)
+        );
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbDeletePost($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $post_id = (int)$args[3];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.post.delete');
+
+        $post = get_post($post_id, ARRAY_A);
+        if (empty($post['ID'])) {
+            return new IXR_Error(404, __('Invalid post ID.'));
+        }
+
+        if (!current_user_can('delete_post', $post_id)) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to delete this post.'));
+        }
+
+        $result = wp_delete_post($post_id);
+
+        if (!$result) {
+            return new IXR_Error(500, __('Sorry, the post could not be deleted.'));
+        }
+
+        return array(
+            true, null
+        );
+
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetPosts($args)
+    {
+        if (!$this->minimum_args($args, 3)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $struct = $args[3];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.posts.get');
+
+        $query = array();
+        $post_type = get_post_type_object('post');
+
+        if (!current_user_can($post_type->cap->edit_posts)) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to edit posts in this post type.'));
+        }
+
+        $query['post_type'] = $post_type->name;
+
+        if (!empty($struct['status'])) {
+            $query['post_status'] = $this->toWpStatus($struct['status']);
+        }
+
+        if (isset($struct['number'])) {
+            $query['numberposts'] = absint($struct['number']);
+        }
+
+        if (isset($struct['offset'])) {
+            $query['offset'] = absint($struct['offset']);
+        }
+
+//        if (isset($filter['orderby'])) {
+//            $query['orderby'] = $filter['orderby'];
+//
+//            if (isset($filter['order'])) {
+//                $query['order'] = $filter['order'];
+//            }
+//        }
+//
+//        if (isset($filter['s'])) {
+//            $query['s'] = $filter['s'];
+//        }
+
+        $posts_list = wp_get_recent_posts($query);
+
+        if (!$posts_list) {
+            return array();
+        }
+
+        $posts = array();
+        foreach ($posts_list as $post) {
+            if (!current_user_can('edit_post', $post['ID'])) {
+                continue;
+            }
+            $posts[] = $this->commonNoteStruct($post, $struct);
+        }
+        return array(true,
+            $posts
+        );
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetPages($args)
+    {
+        if (!$this->minimum_args($args, 3)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+//        $struct = $args[3];
+        $num_pages = 20;
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        if (!current_user_can('edit_pages')) {
+            return new IXR_Error(401, __('Sorry, you are not allowed to edit pages.'));
+        }
+
+        /** This action is documented in wp-includes/class-wp-xmlrpc-server.php */
+        do_action('xmlrpc_call', 'kraitnabo.pages.get');
+
+        $pages = get_posts(
+            array(
+                'post_type' => 'page',
+                'post_status' => 'any',
+                'numberposts' => $num_pages,
+            )
+        );
+        $num_pages = count($pages);
+        $pages_struct = array();
+
+        if ($num_pages >= 1) {
+            foreach ($pages as $page) {
+                if (current_user_can('edit_page', $page->ID)) {
+                    $pages_struct[] = array(
+                        'cid' => $page->ID,
+                        'title' => $page->post_title,
+                        'slug' => $page->post_name,
+                        'created' => strtotime($page->post_date) - 28800,
+                        'modified' => strtotime($page->post_date) - 28800,
+                        'text' => $page->post_content,
+                        'order' => "0",
+                        'authorId' => (string)$user->ID,
+                        'template' => "",
+                        'type' => "page",
+                        'status' => "publish",
+                        'password' => $page->post_password,
+                        'commentsNum' => "0",
+                        'allowComment' => comments_open($page->ID) ? "1" : "0",
+                        'allowPing' => pings_open($page->ID) ? "1" : "0",
+                        'allowFeed' => "0",
+                        'parent' => $page->post_parent,
+
+                        'permalink' => get_permalink($page->ID),
+                        'description' => "",
+                        'fields' => json_encode(array()),
+                        'categories' => "",
+                        'tags' => "",
+                    );
+                }
+            }
+        }
+
+        return array(
+            true,
+            $pages_struct
+        );
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbNewComment($args)
+    {
+        if (!$this->minimum_args($args, 5)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $post = $args[3];
+        $content_struct = $args[4];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        $allow_anon = apply_filters('xmlrpc_allow_anonymous_comments', false);
+
+        if (!$user) {
+            $logged_in = false;
+            if ($allow_anon && get_option('comment_registration')) {
+                return new IXR_Error(403, __('Sorry, you must be logged in to comment.'));
+            } elseif (!$allow_anon) {
+                return $this->error;
+            }
+        } else {
+            $logged_in = true;
+        }
+
+        if (is_numeric($post)) {
+            $post_id = absint($post);
+        } else {
+            $post_id = url_to_postid($post);
+        }
+
+        if (!$post_id) {
+            return new IXR_Error(404, __('Invalid post ID.'));
+        }
+
+        if (!get_post($post_id)) {
+            return new IXR_Error(404, __('Invalid post ID.'));
+        }
+
+        if (!comments_open($post_id)) {
+            return new IXR_Error(403, __('Sorry, comments are closed for this item.'));
+        }
+
+        if (empty($content_struct['text'])) {
+            return new IXR_Error(403, __('Comment is required.'));
+        }
+
+        $comment = array(
+            'comment_post_ID' => $post_id,
+            'comment_content' => $content_struct['text'],
+        );
+
+        if ($logged_in) {
+            $display_name = $user->display_name;
+            $user_email = $user->user_email;
+            $user_url = $user->user_url;
+
+            $comment['comment_author'] = $this->escape($display_name);
+            $comment['comment_author_email'] = $this->escape($user_email);
+            $comment['comment_author_url'] = $this->escape($user_url);
+            $comment['user_ID'] = $user->ID;
+        } else {
+            $comment['comment_author'] = '';
+            if (isset($content_struct['author'])) {
+                $comment['comment_author'] = $content_struct['author'];
+            }
+
+            $comment['comment_author_email'] = '';
+            if (isset($content_struct['mail'])) {
+                $comment['comment_author_email'] = $content_struct['mail'];
+            }
+
+            $comment['comment_author_url'] = '';
+            if (isset($content_struct['url'])) {
+                $comment['comment_author_url'] = $content_struct['url'];
+            }
+
+            $comment['user_ID'] = 0;
+
+            if (get_option('require_name_email')) {
+                if (6 > strlen($comment['comment_author_email']) || '' == $comment['comment_author']) {
+                    return new IXR_Error(403, __('Comment author name and email are required.'));
+                } elseif (!is_email($comment['comment_author_email'])) {
+                    return new IXR_Error(403, __('A valid email address is required.'));
+                }
+            }
+        }
+
+        $comment['comment_parent'] = isset($content_struct['parent']) ? absint($content_struct['parent']) : 0;
+
+        do_action('xmlrpc_call', 'kraitnabo.comment.new');
+
+        $comment_ID = wp_new_comment($comment, true);
+        if (is_wp_error($comment_ID)) {
+            return new IXR_Error(403, $comment_ID->get_error_message());
+        }
+
+        if (!$comment_ID) {
+            return new IXR_Error(403, __('Something went wrong.'));
+        }
+
+        return array(true, $comment_ID);
+    }
+
+    /**
+     * @param $args
+     * @return array|IXR_Error
+     */
+    public function NbGetComments($args)
+    {
+        if (!$this->minimum_args($args, 4)) {
+            return $this->error;
+        }
+
+        $this->escape($args);
+        $struct = $args[3];
+
+        $user = $this->access($args[0], $args[1], $args[2]);
+        if (!$user) {
+            return $this->error;
+        }
+
+        do_action('xmlrpc_call', 'kraitnabo.comments.get');
+
+        if ($struct['status'] == "all") {
+            $status = '';
+        } else {
+            $status = $this->toWpStatus($struct['status'], "comment");
+        }
+
+        if (!current_user_can('moderate_comments') && 'approve' !== $status) {
+            return new IXR_Error(401, __('Invalid comment status.'));
+        }
+
+        $post_id = '';
+        if (isset($struct['cid'])) {
+            $post_id = absint($struct['cid']);
+        }
+
+        $post_type = '';
+//        if (isset($struct['post_type'])) {
+//            $post_type_object = get_post_type_object($struct['post_type']);
+//            if (!$post_type_object || !post_type_supports($post_type_object->name, 'comments')) {
+//                return new IXR_Error(404, __('Invalid post type.'));
+//            }
+//            $post_type = $struct['post_type'];
+//        }
+
+        $offset = 0;
+        if (isset($struct['offset'])) {
+            $offset = absint($struct['offset']);
+        }
+
+        $number = 10;
+        if (isset($struct['number'])) {
+            $number = absint($struct['number']);
+        }
+
+        $comments = get_comments(
+            array(
+                'status' => $status,
+                'post_id' => $post_id,
+                'offset' => $offset,
+                'number' => $number,
+                'post_type' => $post_type,
+            )
+        );
+
+        $comments_struct = array();
+        if (is_array($comments)) {
+            foreach ($comments as $comment) {
+                $comments_struct[] = $this->commonCommentsStruct($comment);
+            }
+        }
+        return array(true, $comments_struct);
+
+    }
+
+    /**
+     * @param $comment
+     * @return array
+     */
+    public function commonCommentsStruct($comment)
+    {
+        if ('0' == $comment->comment_approved) {
+            $comment_status = 'hold';
+        } elseif ('spam' == $comment->comment_approved) {
+            $comment_status = 'spam';
+        } elseif ('1' == $comment->comment_approved) {
+            $comment_status = 'approve';
+        } else {
+            $comment_status = $comment->comment_approved;
+        }
+        return array(
+            'coid' => $comment->comment_ID,
+            'cid' => $comment->comment_post_ID,
+            'created' => strtotime($comment->comment_date) - 28800,
+            'author' => $comment->comment_author,
+            'authorId' => $comment->user_id,
+            'ownerId' => $comment->user_id,
+            'mail' => $comment->comment_author_email,
+            'url' => $comment->comment_author_url,
+            'ip' => $comment->comment_author_IP,
+            'agent' => "",
+            'text' => $comment->comment_content,
+            'type' => $comment->comment_type,
+            'status' => $this->toNbStatus($comment_status, "comment"),
+            'parent' => $comment->comment_parent,
+
+            'permalink' => get_comment_link($comment),
+            'title' => get_the_title($comment->comment_post_ID),
+        );
+    }
+
+    /**
+     * @param $status
+     * @param string $type
+     * @return string
+     * @noinspection PhpDuplicateSwitchCaseBodyInspection
+     */
+    private function toNbStatus($status, $type = 'post')
+    {
+        if ('post' == $type) {
+            /** 文章状态 */
+            switch ($status) {
+                case 'pending':
+                    return 'waiting';
+                case 'publish':
+                case 'draft':
+                case 'private':
+                case 'waiting':
+                    return $status;
+                default:
+                    return 'publish';
+            }
+        } else if ('page' == $type) {
+            switch ($status) {
+                case 'publish':
+                case 'draft':
+                case 'private':
+                    return $status;
+                default:
+                    return 'publish';
+            }
+        } else if ('comment' == $type) {
+            switch ($status) {
+                case 'approve':
+                case 'publish':
+                case 'approved':
+                    return 'approved';
+                case 'hold':
+                case 'waiting':
+                    return 'waiting';
+                case 'spam':
+                    return $status;
+                default:
+                    return 'approved';
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * 获取分类和标签的字符串
+     * @param int $cid
+     * @param boolean $isCategory
+     * @return string
+     */
+    public function commonMetasNames($cid, $isCategory)
+    {
+        if ($isCategory) {
+            $metas = get_the_category($cid);
+        } else {
+            $metas = wp_get_post_tags($cid);
+        }
+        $meta = array();
+        if ($metas) {
+            foreach ($metas as $m) {
+                $meta[] = $m->name;
+            }
+        }
+        return implode(",", $meta);
+    }
+
+    /**
+     * 统一解析笔记
+     * @param $post
+     * @param $struct
+     * @return array
+     */
+    public function commonNoteStruct($post, $struct)
+    {
+        return array(
+            'cid' => $post['ID'],
+            'title' => $post['post_title'],
+            'slug' => $post['post_name'],
+            'created' => strtotime($post['post_date']) - 28800,
+            'modified' => strtotime($post['post_modified']) - 28800,
+            'text' => $post['post_content'],
+            'order' => "0",
+            'authorId' => $post['post_author'],
+            'template' => "",
+            'type' => $post['post_type'],
+            'status' => $this->toNbStatus($post['post_status']),
+            'password' => $post['post_password'],
+            'commentsNum' => "0",
+            'allowComment' => $post['comment_status'] == "open" ? "1" : "0",
+            'allowPing' => $post['ping_status'] == "open" ? "1" : "0",
+            'allowFeed' => "0",
+            'parent' => $post['post_parent'],
+
+            'permalink' => get_permalink($post['ID']),
+            'description' => "",
+            'fields' => json_encode(array()),
+            'categories' => $this->commonMetasNames($post['ID'], true),
+            'tags' => $this->commonMetasNames($post['ID'], false),
+        );
+    }
 }
