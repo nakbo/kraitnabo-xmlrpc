@@ -1382,6 +1382,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         $struct = array();
+        $this->options->siteUrl = rtrim($this->options->siteUrl, '/');
         foreach ($options as $option) {
             if (isset($this->options->{$option})) {
                 $o = array(
@@ -1392,8 +1393,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             } else {
                 $select = $this->db->select()->from('table.options')
                     ->where('name = ?', $option)
-                    ->where('user = ? ', 0);
-                $select->order('user', Typecho_Db::SORT_DESC);
+                    ->where('user = ? ', 0)
+                    ->order('user', Typecho_Db::SORT_DESC);
                 $o = $this->db->fetchRow($select);
             }
             $struct[] = array(
