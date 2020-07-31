@@ -7918,17 +7918,18 @@ class wp_xmlrpc_server extends IXR_Server
 //            }
 //        }
 //
-//        if (isset($filter['s'])) {
-//            $query['s'] = $filter['s'];
-//        }
 
-        $posts_list = wp_get_recent_posts($query);
-
-        if (!$posts_list) {
-            return array();
+        if (isset($struct['keywords'])) {
+            $query['s'] = $struct['keywords'];
         }
 
+        $posts_list = wp_get_recent_posts($query);
         $posts = array();
+
+        if (!$posts_list) {
+            return array(true, $posts);
+        }
+
         foreach ($posts_list as $post) {
             if (!current_user_can('edit_post', $post['ID'])) {
                 continue;
