@@ -602,7 +602,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         }
 
         if (!empty($struct['keywords'])) {
-            $select->where('title LIKE ?', '%' . $struct['keywords'] . '%');
+            $searchQuery = '%' . str_replace(' ', '%', $struct['keywords']) . '%';
+            $select->where('table.contents.title LIKE ? OR table.contents.text LIKE ?', $searchQuery, $searchQuery);
         }
 
         $pageSize = empty($struct['number']) ? 10 : abs(intval($struct['number']));
