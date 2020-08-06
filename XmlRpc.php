@@ -93,15 +93,15 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     }
 
     /**
-     * 静态经清单
+     * 静态清单
      * @return array
      */
     public static function NbGetManifestStatic()
     {
         return array(
             "engineName" => "typecho",
-            "versionCode" => 13,
-            "versionName" => "2.2"
+            "versionCode" => 14,
+            "versionName" => "2.3"
         );
     }
 
