@@ -100,8 +100,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     {
         return array(
             "engineName" => "typecho",
-            "versionCode" => 14,
-            "versionName" => "2.3"
+            "versionCode" => 15,
+            "versionName" => "2.4"
         );
     }
 
@@ -862,36 +862,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         } catch (Typecho_Widget_Exception $e) {
             return new IXR_Error($e->getCode(), $e->getMessage());
         }
-    }
-
-    /**
-     *
-     * @access public
-     * @param string $union
-     * @param string $userName
-     * @param string $password
-     * @param array $struct
-     * @return array|IXR_Error
-     * @throws Typecho_Exception
-     * @throws Typecho_Widget_Exception
-     */
-    public function NbGetAlarmComments($union, $userName, $password, $struct)
-    {
-        /** 检查权限*/
-        if (!$this->access($union, $userName, $password, "contributor")) {
-            return $this->error;
-        }
-        if (empty($struct['lastTime'])) {
-            return new IXR_Error(403, _t('缺少参数'));
-        }
-        if (empty($struct['number'])) {
-            $query = $this->db->select()->from('table.comments')->where('table.comments.authorId != ?', $this->uid)->where('created >= ?', intval($struct['lastTime']));
-            $result = $this->db->fetchAll($query);
-        } else {
-            $query = $this->db->select(array('COUNT(coid)' => 'num'))->from('table.comments')->where('table.comments.authorId != ?', $this->uid)->where('created >= ?', intval($struct['lastTime']));
-            $result = $this->db->fetchObject($query)->num;
-        }
-        return array(true, $result);
     }
 
     /**
@@ -1888,12 +1858,19 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
+     * @noinspection PhpUndefinedMethodInspection
      */
-    public function NbConfigPlugins($union, $userName, $password, $struct)
+    public function NbConfigPlugin($union, $userName, $password, $struct)
     {
         /** 检查权限*/
         if (!$this->access($union, $userName, $password, "administrator")) {
             return $this->error;
+        }
+
+        if (isset($this->options->plugins['activated']['Aidnabo'])) {
+            if ($this->options->plugin("Aidnabo")->setPluginAble == 0) {
+                return array(false, "你已关闭插件设置能力\n可以在 Aidnabo 插件里开启设置能力");
+            }
         }
 
         if (!isset($struct['method'])) {
@@ -1904,39 +1881,256 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return new IXR_Error(403, "没有设定插件名字");
         }
 
-        /** @noinspection PhpUndefinedFieldInspection */
         if (!isset($this->options->plugins['activated']{$struct['pluginName']})) {
             return new IXR_Error(403, "没有启用插件");
         }
 
-        if ($struct['method'] == "edit") {
-            if (!isset($struct['settings']) || !is_array($struct['settings'])) {
-                return new IXR_Error(403, "settings 不规范");
-            }
+        $className = $struct['pluginName'] . "_Plugin";
+
+        if ($struct['method'] == "set") {
 
             if (empty($struct['settings'])) {
                 return new IXR_Error(403, "settings 不规范");
             }
 
+            $settings = json_decode($struct['settings'], true);
+
+            ob_start();
+            $form = new Typecho_Widget_Helper_Form();
+            call_user_func(array($className, 'config'), $form);
+
+            foreach ($settings as $key => $val) {
+                if (!empty($form->getInput($key))) {
+                    $_GET{$key} = $settings{$key};
+                    $form->getInput($key)->value($val);
+                }
+            }
+
+            /** 验证表单 */
+            if ($form->validate()) {
+                return new IXR_Error(403, "表中有数据不符合配置要求");
+            }
+
+            $settings = $form->getAllRequest();
+            ob_end_clean();
+
             try {
-                $this->singletonWidget('Widget_Plugins_Edit', NULL, NULL, false)->configPlugin(
-                    $struct['pluginName'],
-                    $struct['settings']
+                $edit = $this->singletonWidget(
+                    'Widget_Plugins_Edit',
+                    NULL,
+                    NULL,
+                    false
                 );
-                return array(true, null);
+
+                if (!$edit->configHandle($struct['pluginName'], $settings, false)) {
+                    Widget_Plugins_Edit::configPlugin($struct['pluginName'], $settings);
+                }
+
+                return array(true, "设置成功");
             } catch (Typecho_Exception $e) {
                 return new IXR_Error($e->getCode(), $e->getMessage());
             }
         } else {
-            $select = $this->db->select()->from('table.options')
-                ->where('name = ?', 'plugin:' . $struct['pluginName']);
 
-            $options = $this->db->fetchAll($select);
-            $data = array();
-            foreach ($options as $option) {
-                $data[] = unserialize($option['value']);
+            ob_start();
+            $config = $this->singletonWidget(
+                'Widget_Plugins_Config',
+                null,
+                array(
+                    "config" => $struct['pluginName']
+                ),
+                false
+            );
+            $form = $config->config();
+            $form->setAction(NULL);
+            $form->setAttribute("id", "form");
+            $form->setMethod(Typecho_Widget_Helper_Form::GET_METHOD);
+            $form->render();
+            $string = ob_get_contents();
+            $formLayout = $string;
+            ob_end_clean();
+
+            return array(true, $formLayout);
+        }
+
+    }
+
+    /**
+     * @param $union
+     * @param $userName
+     * @param $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @noinspection PhpUndefinedMethodInspection
+     */
+    public function NbConfigProfile($union, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->access($union, $userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        if (!isset($struct['method'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        if (!isset($struct['option'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        if ($struct['method'] == "set") {
+            if (isset($this->options->plugins['activated']['Aidnabo'])) {
+                if ($this->options->plugin("Aidnabo")->setOptionAble == 0) {
+                    return array(false, "你已关闭基本设置能力\n可以在 Aidnabo 插件里开启设置能力");
+                }
             }
-            return array(true, $data);
+
+            if (empty($struct['settings'])) {
+                return new IXR_Error(403, "settings 不规范");
+            }
+            $settings = json_decode($struct['settings'], true);
+
+            ob_start();
+            $config = $this->singletonWidget(
+                'Widget_Users_Profile',
+                null,
+                $settings,
+                false
+            );
+            if ($struct['option'] == "profile") {
+                $config->updateProfile();
+            } else if ($struct['option'] == "options") {
+                $config->updateOptions();
+            } else if ($struct['option'] == "password") {
+                $config->updatePassword();
+//            } else if ($struct['option'] == "personal") {
+//                $config->updatePersonal();
+            }
+            ob_end_clean();
+            return array(true, "设置已经保存");
+        } else {
+            ob_start();
+            $config = $this->singletonWidget(
+                'Widget_Users_Profile',
+                null,
+                null,
+                false
+            );
+
+            if ($struct['option'] == "profile") {
+                $form = $config->profileForm();
+            } else if ($struct['option'] == "options") {
+                $form = $config->optionsForm();
+            } else if ($struct['option'] == "password") {
+                $form = $config->passwordForm();
+//            } else if ($struct['option'] == "personal") {
+//                $form = $config->personalFormList();
+            } else {
+                return new IXR_Error(403, "option 不规范");
+            }
+
+            $form->setAction(NULL);
+            $form->setAttribute("id", "form");
+            $form->setMethod(Typecho_Widget_Helper_Form::GET_METHOD);
+            $form->render();
+            $string = ob_get_contents();
+            $formLayout = $string;
+            ob_end_clean();
+
+            return array(true, $formLayout);
+        }
+    }
+
+    /**
+     * @param $union
+     * @param $userName
+     * @param $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @noinspection PhpUndefinedMethodInspection
+     */
+    public function NbConfigOption($union, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->access($union, $userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        if (!isset($struct['method'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        if (!isset($struct['option'])) {
+            return new IXR_Error(403, "没有设定模式");
+        }
+
+        $alias = NULL;
+        if ($struct['option'] == "general") {
+            $alias = "Widget_Options_General";
+        } else if ($struct['option'] == "discussion") {
+            $alias = "Widget_Options_Discussion";
+        } else if ($struct['option'] == "reading") {
+            $alias = "Widget_Options_Reading";
+        } else if ($struct['option'] == "permalink") {
+            $alias = "Widget_Options_Permalink";
+        } else {
+            return new IXR_Error(403, "option 不规范");
+        }
+
+        if ($struct['method'] == "set") {
+
+            if (isset($this->options->plugins['activated']['Aidnabo'])) {
+                if ($this->options->plugin("Aidnabo")->setOptionAble == 0) {
+                    return array(false, "你已关闭基本设置能力\n可以在 Aidnabo 插件里开启设置能力");
+                }
+            }
+
+            if (empty($struct['settings'])) {
+                return new IXR_Error(403, "settings 不规范");
+            }
+            $settings = json_decode($struct['settings'], true);
+
+            ob_start();
+            $config = $this->singletonWidget(
+                $alias,
+                null,
+                $settings,
+                false
+            );
+            if ($struct['option'] == "general") {
+                $config->updateGeneralSettings();
+            } else if ($struct['option'] == "discussion") {
+                $config->updateDiscussionSettings();
+            } else if ($struct['option'] == "reading") {
+                $config->updateReadingSettings();
+            } else if ($struct['option'] == "permalink") {
+                $config->updatePermalinkSettings();
+            }
+            ob_end_clean();
+            return array(true, "设置已经保存");
+        } else {
+
+            ob_start();
+            $config = $this->singletonWidget(
+                $alias,
+                null,
+                null,
+                false
+            );
+            $form = $config->form();
+            $form->setAction(NULL);
+            $form->setAttribute("id", "form");
+            $form->setMethod(Typecho_Widget_Helper_Form::GET_METHOD);
+            $form->render();
+            $string = ob_get_contents();
+            $formLayout = $string;
+            ob_end_clean();
+
+            return array(true, $formLayout);
         }
 
     }
@@ -1952,6 +2146,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      * @return array|IXR_Error
      * @throws Typecho_Exception
      * @throws Typecho_Widget_Exception
+     * @noinspection PhpUndefinedMethodInspection
      */
     public function NbConfigTheme($union, $userName, $password, $struct)
     {
@@ -1960,50 +2155,284 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return $this->error;
         }
 
+        if (isset($this->options->plugins['activated']['Aidnabo'])) {
+            if ($this->options->plugin("Aidnabo")->setThemeAble == 0) {
+                return array(false, "你已关闭主题设置能力\n可以在 Aidnabo 插件里开启设置能力");
+            }
+        }
+
         if (!isset($struct['method'])) {
             return new IXR_Error(403, "没有设定模式");
         }
 
-        /** @noinspection PhpUndefinedFieldInspection */
-        $theme = $this->options->theme;
-        $select = $this->db->select()->from('table.options')
-            ->where('name = ?', 'theme:' . $theme);
+        if (Widget_Themes_Config::isExists()) {
 
-        $options = $this->db->fetchAll($select);
+            if ($struct['method'] == "set") {
 
-        if ($struct['method'] == "edit") {
-            if (!isset($struct['settings']) || !is_array($struct['settings'])) {
-                return new IXR_Error(403, "settings 不规范");
-            }
-
-            if (empty($struct['settings'])) {
-                return new IXR_Error(403, "settings 不规范");
-            }
-            try {
-                foreach ($options as $option) {
-                    $value = unserialize($option['value']);
-                    $value = array_merge($value, $struct['settings']);
-
-                    $this->db->query($this->db->update('table.options')
-                        ->rows(array('value' => serialize($value)))
-                        ->where('name = ?', 'theme:' . $theme)
-                        ->where('user = ?', $option['user']));
+                if (empty($struct['settings'])) {
+                    return new IXR_Error(403, "settings 不规范");
                 }
-                return array(true, null);
-            } catch (Typecho_Exception $e) {
-                return new IXR_Error($e->getCode(), $e->getMessage());
+
+                try {
+
+                    $settings = json_decode($struct['settings'], true);
+                    $theme = $this->options->theme;
+
+                    ob_start();
+                    $form = new Typecho_Widget_Helper_Form();
+                    themeConfig($form);
+                    $inputs = $form->getInputs();
+
+                    if (!empty($inputs)) {
+                        foreach ($inputs as $key => $val) {
+                            $_GET{$key} = $settings{$key};
+                            $form->getInput($key)->value($settings{$key});
+                        }
+                    }
+
+                    /** 验证表单 */
+                    if ($form->validate()) {
+                        return new IXR_Error(403, "表中有数据不符合配置要求");
+                    }
+
+                    $settings = $form->getAllRequest();
+                    ob_end_clean();
+
+                    $db = Typecho_Db::get();
+                    $themeEdit = $this->singletonWidget(
+                        'Widget_Themes_Edit',
+                        NULL,
+                        NULL,
+                        false
+                    );
+
+                    if (!$themeEdit->configHandle($settings, false)) {
+                        if ($this->options->__get('theme:' . $theme)) {
+                            $update = $db->update('table.options')
+                                ->rows(array('value' => serialize($settings)))
+                                ->where('name = ?', 'theme:' . $theme);
+                            $db->query($update);
+                        } else {
+                            $insert = $db->insert('table.options')
+                                ->rows(array(
+                                    'name' => 'theme:' . $theme,
+                                    'value' => serialize($settings),
+                                    'user' => 0
+                                ));
+                            $db->query($insert);
+                        }
+                    }
+
+                    return array(true, "外观设置已经保存");
+                } catch (Typecho_Exception $e) {
+                    return new IXR_Error($e->getCode(), $e->getMessage());
+                }
+
+            } else {
+
+                ob_start();
+                $config = $this->singletonWidget(
+                    'Widget_Themes_Config',
+                    null,
+                    null,
+                    false
+                );
+                $form = $config->config();
+                $form->setAction(NULL);
+                $form->setAttribute("id", "form");
+                $form->setMethod(Typecho_Widget_Helper_Form::GET_METHOD);
+                $form->render();
+                $string = ob_get_contents();
+                $formLayout = $string;
+                ob_end_clean();
+
+                return array(true, $formLayout);
             }
         } else {
-            $data = array();
-            foreach ($options as $option) {
-                $data[] = unserialize($option['value']);
-            }
-            $data[] = array(
-                "name" => $theme
-            );
-            return array(true, $data);
+            return new IXR_Error(403, "没有主题可配置");
         }
 
+    }
+
+    /**
+     * @param $union
+     * @param $userName
+     * @param $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function NbGetPlugins($union, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->access($union, $userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        $list = array();
+        $activatedPlugins = $this->singletonWidget('Widget_Plugins_List@activated', 'activated=1');
+
+        if ($activatedPlugins->have() || !empty($activatedPlugins->activatedPlugins)) {
+            while ($activatedPlugins->next()) {
+                $list[] = array(
+                    "activated" => true,
+                    "name" => $activatedPlugins->name,
+                    "title" => $activatedPlugins->title,
+                    "dependence" => $activatedPlugins->dependence,
+                    "description" => strip_tags($activatedPlugins->description),
+                    "version" => $activatedPlugins->version,
+                    "homepage" => $activatedPlugins->homepage,
+                    "author" => $activatedPlugins->author,
+                    "config" => $activatedPlugins->config
+                );
+            }
+        }
+
+        $deactivatedPlugins = $this->singletonWidget('Widget_Plugins_List@unactivated', 'activated=0');
+
+        if ($deactivatedPlugins->have() || !$activatedPlugins->have()) {
+            while ($deactivatedPlugins->next()) {
+                $list[] = array(
+                    "activated" => false,
+                    "name" => $deactivatedPlugins->name,
+                    "title" => $deactivatedPlugins->title,
+                    "dependence" => true,
+                    "description" => strip_tags($deactivatedPlugins->description),
+                    "version" => $deactivatedPlugins->version,
+                    "homepage" => $deactivatedPlugins->homepage,
+                    "author" => $deactivatedPlugins->author,
+                    "config" => false
+                );
+            }
+        }
+
+        return array(true, $list);
+    }
+
+    /**
+     * @param $union
+     * @param $userName
+     * @param $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function NbSetPlugins($union, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->access($union, $userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        if (isset($this->options->plugins['activated']['Aidnabo'])) {
+            if ($this->options->plugin("Aidnabo")->setPluginAble == 0) {
+                return array(false, "你已关闭插件设置能力\n可以在 Aidnabo 插件里开启设置能力");
+            }
+        }
+
+        try {
+            $plugins = $this->singletonWidget(
+                'Widget_Plugins_Edit',
+                NULL,
+                NULL,
+                false
+            );
+
+            if ($struct['method'] == "activate") {
+                $plugins->activate($struct['pluginName']);
+
+            } else if ($struct['method'] == "deactivate") {
+                $plugins->deactivate($struct['pluginName']);
+
+            }
+
+            $notice = Json::decode(
+                Typecho_Cookie::get("__typecho_notice"), true
+            )[0];
+
+            return array(true, $notice);
+        } catch (Typecho_Widget_Exception $e) {
+            return new IXR_Error(403, $e);
+        }
+
+    }
+
+    /**
+     * @param $union
+     * @param $userName
+     * @param $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function NbGetThemes($union, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->access($union, $userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        $list = array();
+        $themes = $this->singletonWidget('Widget_Themes_List');
+
+        while ($themes->next()) {
+            $list[] = array(
+                "activated" => $themes->activated,
+                "name" => $themes->name,
+                "title" => $themes->title,
+                "description" => strip_tags($themes->description),
+                "version" => $themes->version,
+                "homepage" => $themes->homepage,
+                "author" => $themes->author,
+                "config" => false
+            );
+        }
+        return array(true, $list);
+    }
+
+    /**
+     * @param $union
+     * @param $userName
+     * @param $password
+     * @param $struct
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     */
+    public function NbSetThemes($union, $userName, $password, $struct)
+    {
+        /** 检查权限*/
+        if (!$this->access($union, $userName, $password, "administrator")) {
+            return $this->error;
+        }
+
+        if (isset($this->options->plugins['activated']['Aidnabo'])) {
+            if ($this->options->plugin("Aidnabo")->setThemeAble == 0) {
+                return array(false, "你已关闭主题设置能力\n可以在 Aidnabo 插件里开启设置能力");
+            }
+        }
+
+        try {
+            $themes = $this->singletonWidget(
+                'Widget_Themes_Edit',
+                NULL,
+                NULL,
+                false
+            );
+
+            if ($struct['method'] == "changeTheme") {
+                $themes->changeTheme($struct['themeName']);
+                return array(true, "外观已经改变");
+            } else {
+                return new IXR_Error(403, "method 未知");
+            }
+
+        } catch (Typecho_Widget_Exception $e) {
+            return new IXR_Error(403, $e);
+        }
     }
 
     /**
@@ -2253,8 +2682,6 @@ EOF;
                 'kraitnabo.category.edit' => array($this, 'NbEditCategory'),
                 'kraitnabo.category.delete' => array($this, 'NbDeleteCategory'),
                 'kraitnabo.categories.get' => array($this, 'NbGetCategories'),
-                'kraitnabo.options.get' => array($this, 'NbGetOptions'),
-                'kraitnabo.options.set' => array($this, 'NbSetOptions'),
                 'kraitnabo.tags.get' => array($this, 'NbGetTags'),
                 'kraitnabo.media.new' => array($this, 'NbNewMedia'),
                 'kraitnabo.media.edit' => array($this, "NbEditMedia"),
@@ -2264,9 +2691,16 @@ EOF;
                 'kraitnabo.plugin.replace' => array($this, 'NbPluginReplace'),
                 'kraitnabo.plugin.links' => array($this, 'NbPluginLinks'),
                 'kraitnabo.plugin.dynamics' => array($this, 'NbPluginDynamics'),
-                'kraitnabo.config.plugins' => array($this, 'NbConfigPlugins'),
+                'kraitnabo.config.plugin' => array($this, 'NbConfigPlugin'),
                 'kraitnabo.config.theme' => array($this, 'NbConfigTheme'),
-                'kraitnabo.alarm.comments.get' => array($this, 'NbGetAlarmComments'),
+                'kraitnabo.config.option' => array($this, 'NbConfigOption'),
+                'kraitnabo.config.profile' => array($this, 'NbConfigProfile'),
+                'kraitnabo.plugins.get' => array($this, 'NbGetPlugins'),
+                'kraitnabo.plugins.set' => array($this, 'NbSetPlugins'),
+                'kraitnabo.themes.get' => array($this, 'NbGetThemes'),
+                'kraitnabo.themes.set' => array($this, 'NbSetThemes'),
+                'kraitnabo.options.get' => array($this, 'NbGetOptions'),
+                'kraitnabo.options.set' => array($this, 'NbSetOptions'),
 
                 /** PingBack */
                 'pingback.ping' => array($this, 'pingbackPing'),
