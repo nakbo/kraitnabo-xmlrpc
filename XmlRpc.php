@@ -699,8 +699,15 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             $input['created'] = $content['dateCreated']->getTimestamp() - $this->options->timezone + $this->options->serverTimezone;
         }
 
-        if (isset($content['fields']) && is_array($content['fields'])) {
-            $input['fields'] = $content['fields'];
+        if (isset($content['fields'])) {
+            $fields = json_decode($content['fields'], true);
+            foreach ($fields as $field) {
+                if (!is_array($field["value"])) {
+                    $input['fields'][$field["name"]] = array(
+                        $field["type"], $field["value"]
+                    );
+                }
+            }
         }
 
         if (!empty($content['categories']) && is_array($content['categories'])) {
@@ -760,6 +767,59 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         } catch (Typecho_Widget_Exception $e) {
             new IXR_Error($e->getCode(), $e->getMessage());
         }
+    }
+
+    /**
+     * 自定义字段
+     * @param $union
+     * @param $userName
+     * @param $password
+     * @param $content
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @noinspection PhpIncludeInspection
+     */
+    public function NbFieldPost($union, $userName, $password, $content)
+    {
+        if (!$this->access($union, $userName, $password, "contributor")) {
+            return $this->error;
+        }
+
+        $type = isset($content['type']) && 'page' == $content['type'] ? 'page' : 'post';
+        $widget = $this->singletonWidget(
+            'page' == $type ? 'Widget_Contents_Page_Edit' : 'Widget_Contents_Post_Edit',
+            NULL,
+            NULL,
+            false
+        );
+
+        ob_start();
+        $configFile = $this->options->themeFile($this->options->theme, 'functions.php');
+        $layout = new Typecho_Widget_Helper_Layout();
+
+        $widget->pluginHandle()->getDefaultFieldItems($layout);
+
+        if (file_exists($configFile)) {
+            require_once $configFile;
+
+            if (function_exists('themeFields')) {
+                themeFields($layout);
+            }
+
+            if (function_exists($widget->themeCustomFieldsHook)) {
+                call_user_func($widget->themeCustomFieldsHook, $layout);
+            }
+        }
+
+        $layout->render();
+        $div = ob_get_contents();
+        ob_end_clean();
+
+        return array(
+            true,
+            $div
+        );
     }
 
     /**
@@ -2270,12 +2330,13 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             return $this->error;
         }
 
+        $target = isset($struct['option']) ? $struct['option'] : "typecho";
         $list = array();
         $activatedPlugins = $this->singletonWidget('Widget_Plugins_List@activated', 'activated=1');
 
         if ($activatedPlugins->have() || !empty($activatedPlugins->activatedPlugins)) {
             while ($activatedPlugins->next()) {
-                $list[] = array(
+                $list[$activatedPlugins->name] = array(
                     "activated" => true,
                     "name" => $activatedPlugins->name,
                     "title" => $activatedPlugins->title,
@@ -2293,7 +2354,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         if ($deactivatedPlugins->have() || !$activatedPlugins->have()) {
             while ($deactivatedPlugins->next()) {
-                $list[] = array(
+                $list[$deactivatedPlugins->name] = array(
                     "activated" => false,
                     "name" => $deactivatedPlugins->name,
                     "title" => $deactivatedPlugins->title,
@@ -2307,7 +2368,50 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
         }
 
-        return array(true, $list);
+        if ($target == "testore") {
+            $activatedList = $this->options->plugins['activated'];
+            if (isset($activatedList['TeStore'])) {
+                $testore = $this->singletonWidget(
+                    "TeStore_Action",
+                    null,
+                    null,
+                    false
+                );
+                $storeList = array();
+                $plugins = $testore->getPluginData();
+
+                foreach ($plugins as $plugin) {
+                    $thisPlugin = $list[$plugin['pluginName']];
+                    $installed = array_key_exists($plugin['pluginName'], $list);
+                    $activated = $installed ? $thisPlugin["activated"] : false;
+                    $storeList[] = array(
+                        "activated" => $activated,
+                        "name" => $plugin['pluginName'],
+                        "title" => $plugin['pluginName'],
+                        "dependence" => $activated ? $thisPlugin["dependence"] : null,
+                        "description" => strip_tags($plugin['desc']),
+                        "version" => $plugin['version'],
+                        "homepage" => $plugin['pluginUrl'],
+                        "author" => strip_tags($plugin['authorHtml']),
+                        "config" => $activated ? $thisPlugin["config"] : false,
+
+                        "installed" => $installed,
+                        "mark" => $plugin['mark'],
+                        "zipFile" => $plugin['zipFile'],
+                    );
+                }
+
+                return array(true, $storeList);
+            } else {
+                return array(false, "你没有安装 TeStore 插件");
+            }
+        } else {
+            $callList = array();
+            foreach ($list as $key => $info) {
+                $callList[] = $info;
+            }
+            return array(true, $callList);
+        }
     }
 
     /**
@@ -2332,29 +2436,70 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
         }
 
-        try {
-            $plugins = $this->singletonWidget(
-                'Widget_Plugins_Edit',
-                NULL,
-                NULL,
-                false
-            );
+        $target = isset($struct['option']) ? $struct['option'] : "typecho";
+        if ($target == "testore") {
+            $activatedList = $this->options->plugins['activated'];
+            if (isset($activatedList['TeStore'])) {
+                $authors = preg_split('/([,&])/', $struct['authorName']);
+                foreach ($authors as $key => $val) {
+                    $authors[$key] = trim($val);
+                }
+                $testore = $this->singletonWidget(
+                    "TeStore_Action",
+                    null,
+                    array(
+                        "plugin" => $struct['pluginName'],
+                        "author" => implode('_', $authors),
+                        "zip" => $struct['zipFile'],
+                    ),
+                    false
+                );
 
-            if ($struct['method'] == "activate") {
-                $plugins->activate($struct['pluginName']);
+                $isActivated = $activatedList[$struct['pluginName']];
 
-            } else if ($struct['method'] == "deactivate") {
-                $plugins->deactivate($struct['pluginName']);
+                if ($struct['method'] == "activate") {
+                    if ($isActivated) {
+                        return array(false, "该插件已被安装过");
+                    } else {
+                        $testore->install();
+                    }
+                } else if ($struct['method'] == "deactivate") {
+                    $testore->uninstall();
+                }
 
+                $notice = Json::decode(
+                    Typecho_Cookie::get("__typecho_notice"), true
+                )[0];
+
+                return array(true, $notice);
+            } else {
+                return array(false, "你没有安装 TeStore 插件");
             }
+        } else {
+            try {
+                $plugins = $this->singletonWidget(
+                    'Widget_Plugins_Edit',
+                    NULL,
+                    NULL,
+                    false
+                );
 
-            $notice = Json::decode(
-                Typecho_Cookie::get("__typecho_notice"), true
-            )[0];
+                if ($struct['method'] == "activate") {
+                    $plugins->activate($struct['pluginName']);
 
-            return array(true, $notice);
-        } catch (Typecho_Widget_Exception $e) {
-            return new IXR_Error(403, $e);
+                } else if ($struct['method'] == "deactivate") {
+                    $plugins->deactivate($struct['pluginName']);
+
+                }
+
+                $notice = Json::decode(
+                    Typecho_Cookie::get("__typecho_notice"), true
+                )[0];
+
+                return array(true, $notice);
+            } catch (Typecho_Widget_Exception $e) {
+                return new IXR_Error(403, $e);
+            }
         }
 
     }
@@ -2569,7 +2714,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                     return new IXR_Error(48, _t('PingBack已经存在'));
                 }
             } else {
-                return IXR_Error(49, _t('目标地址禁止Ping'));
+                return new IXR_Error(49, _t('目标地址禁止Ping'));
             }
         } else {
             return new IXR_Error(33, _t('这个目标地址不存在'));
@@ -2669,6 +2814,7 @@ EOF;
                 'kraitnabo.post.edit' => array($this, 'NbEditPost'),
                 'kraitnabo.post.get' => array($this, 'NbGetPost'),
                 'kraitnabo.post.delete' => array($this, 'NbDeletePost'),
+                'kraitnabo.post.field' => array($this, 'NbFieldPost'),
                 'kraitnabo.posts.get' => array($this, 'NbGetPosts'),
                 'kraitnabo.page.new' => array($this, 'NbNewPage'),
                 'kraitnabo.page.edit' => array($this, 'NbEditPage'),
