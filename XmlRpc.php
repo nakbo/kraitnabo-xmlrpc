@@ -100,8 +100,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     {
         return array(
             "engineName" => "typecho",
-            "versionCode" => 15,
-            "versionName" => "2.4"
+            "versionCode" => 16,
+            "versionName" => "2.5"
         );
     }
 
@@ -210,9 +210,8 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
      */
     public function commonNoteStruct($content, $struct)
     {
-
         $markdown = $this->commonParseMarkdown($content['text']);
-        $text = $content['type'] == "post_draft" || isset($struct['text']) ? $markdown : "";
+        $text = isset($struct['text']) ? $markdown : "";
         $description = isset($struct['description']) ? $this->commonParseDescription($markdown) : "";
         $filter = $this->singletonWidget('Widget_Abstract_Contents')->filter($content);
 
@@ -276,14 +275,16 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
     public function getCharacters($from, $type)
     {
         $chars = 0;
+        $owner = "table.comments" == $from ? "ownerId" : "authorId";
         $select = $this->db->select('text')
             ->from($from)
+            ->where($owner . " = ?", $this->uid)
             ->where('type = ?', $type);
         $rows = $this->db->fetchAll($select);
         foreach ($rows as $row) {
             $chars += mb_strlen($row['text'], 'UTF-8');
         }
-        return $chars;
+        return (int)$chars;
     }
 
     /**
@@ -476,7 +477,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                     ->where('status = ?', 'spam'))->num,
                 "textSize" => $this->getCharacters("table.comments", "comment")
             ),
-            "categories" => array(
+            "category" => array(
                 "all" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
                     ->from('table.metas')
                     ->where('type = ?', 'category'))->num,
@@ -485,7 +486,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                     ->where('type = ?', 'category')
                     ->where('count != ?', '0'))->num
             ),
-            "tags" => array(
+            "tag" => array(
                 "all" => $this->db->fetchObject($this->db->select(array('COUNT(mid)' => 'num'))
                     ->from('table.metas')
                     ->where('type = ?', 'tag'))->num,
@@ -494,7 +495,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
                     ->where('type = ?', 'tag')
                     ->where('count != ?', '0'))->num
             ),
-            "medias" => array(
+            "media" => array(
                 "all" => $this->db->fetchObject($this->db->select(array('COUNT(cid)' => 'num'))
                     ->from('table.contents')
                     ->where('authorId = ?', $this->uid)
@@ -507,7 +508,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             )
         );
 
-        return array(true, $statArray);
+        return array(true, json_encode($statArray, JSON_UNESCAPED_UNICODE));
     }
 
     /**
@@ -534,13 +535,11 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             ->where('authorId = ?', $this->uid)
             ->where('cid = ?', $postId);
 
-        $fetchAll = $this->db->fetchAll($select);
-        if (empty($fetchAll)) {
-            return new IXR_Error(403, "不存在此文章");
-        } else {
-            return array(true, $this->commonNoteStruct($fetchAll[0], $struct));
+        $row = $this->db->fetchRow($select);
+        if (count($row) > 0) {
+            return array(true, $this->commonNoteStruct($row, $struct));
         }
-
+        return new IXR_Error(403, "不存在此文章");
     }
 
     /**
@@ -591,7 +590,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         switch ($status) {
             case "draft":
-                $select->where('type = ?', $type . '_draft');
+                $select->where('type LIKE ?', '%_draft');
                 break;
             case "all":
                 $select->where('type = ?', $type);
@@ -609,8 +608,13 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         $pageSize = empty($struct['number']) ? 10 : abs(intval($struct['number']));
         $currentPage = empty($struct['offset']) ? 1 : ceil(abs(intval($struct['offset'])) / $pageSize);
 
-        $select->order('table.contents.created', Typecho_Db::SORT_DESC)
-            ->page($currentPage, $pageSize);
+        if ("page" == $type) {
+            $select->order('table.contents.order', Typecho_Db::SORT_ASC);
+        } else {
+            $select->order('table.contents.' . ("draft" == $status ? "modified" : "created"), Typecho_Db::SORT_DESC);
+        }
+
+        $select->page($currentPage, $pageSize);
 
         try {
             $fetchAll = $this->db->fetchAll($select);
@@ -714,7 +718,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             foreach ($content['categories'] as $category) {
                 if (!$this->db->fetchRow($this->db->select('mid')
                     ->from('table.metas')->where('type = ? AND name = ?', 'category', $category))) {
-                    $this->NewCategory($union, $userName, $password, array('name' => $category));
+                    $this->NbNewCategory($union, $userName, $password, array('name' => $category));
                 }
 
                 $input['category'][] = $this->db->fetchObject($this->db->select('mid')
@@ -861,6 +865,31 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         try {
             $this->singletonWidget('Widget_Contents_Post_Edit', NULL, "cid={$postId}", false)->deletePost();
+            return array(true, null);
+        } catch (Typecho_Widget_Exception $e) {
+            return new IXR_Error($e->getCode(), $e->getMessage());
+        }
+    }
+
+    /**
+     * 删除独立页面
+     * @param string $union
+     * @param mixed $userName
+     * @param mixed $password
+     * @param int $postId
+     * @return array|IXR_Error
+     * @throws Typecho_Exception
+     * @throws Typecho_Widget_Exception
+     * @access public
+     */
+    public function NbDeletePage($union, $userName, $password, $postId)
+    {
+        if (!$this->access($union, $userName, $password, "contributor")) {
+            return $this->error;
+        }
+
+        try {
+            $this->singletonWidget('Widget_Contents_Page_Edit', NULL, "cid={$postId}", false)->deletePage();
             return array(true, null);
         } catch (Typecho_Widget_Exception $e) {
             return new IXR_Error($e->getCode(), $e->getMessage());
@@ -1198,7 +1227,6 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
 
         $categories = $this->singletonWidget('Widget_Metas_Category_List');
 
-        /** 初始化category数组*/
         $categoryStructs = array();
         while ($categories->next()) {
             $categoryStructs[] = $this->commonCategoryTagStruct($categories, null);
@@ -1265,7 +1293,9 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
         if (empty($category['mid'])) {
             return new IXR_Error(403, "没有设置分类mid");
         }
+
         $input['mid'] = $category['mid'];
+
         if (!$this->db->fetchRow($this->db->select('mid')
             ->from('table.metas')->where('type = ? AND mid = ?', 'category', $input['mid']))) {
             return new IXR_Error(403, "没有查找到分类");
@@ -1520,7 +1550,7 @@ class Widget_XmlRpc extends Widget_Abstract_Contents implements Widget_Interface
             }
             return array(true, $attachmentsStruct);
         } catch (Typecho_Exception $e) {
-            return new IXR_Error($e->getCode(), "获取标签失败");
+            return new IXR_Error($e->getCode(), "获取附件列表失败");
         }
 
     }
@@ -2819,6 +2849,7 @@ EOF;
                 'kraitnabo.page.new' => array($this, 'NbNewPage'),
                 'kraitnabo.page.edit' => array($this, 'NbEditPage'),
                 'kraitnabo.page.get' => array($this, 'NbGetPage'),
+                'kraitnabo.page.delete' => array($this, 'NbDeletePage'),
                 'kraitnabo.pages.get' => array($this, 'NbGetPages'),
                 'kraitnabo.comment.new' => array($this, 'NbNewComment'),
                 'kraitnabo.comment.edit' => array($this, 'NbEditComment'),

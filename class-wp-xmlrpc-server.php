@@ -7234,8 +7234,8 @@ class wp_xmlrpc_server extends IXR_Server
     {
         return array(
             "engineName" => "wordpress",
-            "versionCode" => 15,
-            "versionName" => "2.4",
+            "versionCode" => 16,
+            "versionName" => "2.5",
             "manifest" => $args[0]
         );
     }
