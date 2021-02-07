@@ -7241,6 +7241,29 @@ class wp_xmlrpc_server extends IXR_Server
     }
 
     /**
+     * 成功
+     *
+     * @param $data
+     * @return array
+     */
+    public function prosper($data)
+    {
+        return array(true, $data);
+    }
+
+    /**
+     * 失败
+     *
+     * @param $message
+     * @param int $code
+     * @return array
+     */
+    public function pervert($message, $code = -1)
+    {
+        return array(false, [$code, $message]);
+    }
+
+    /**
      * @param $status
      * @param string $type
      * @return string
@@ -7308,20 +7331,18 @@ class wp_xmlrpc_server extends IXR_Server
             return new IXR_Error(401, __('Sorry, you are not allowed to edit this user.'));
         }
 
-        return array(true,
-            array(
-                'uid' => $user->ID,
-                'name' => $user->user_login,
-                'mail' => $user->user_email,
-                'screenName' => $user->nickname,
-                'url' => $user->user_url,
-                'created' => strtotime($user->user_registered),
-                'activated' => time(),
-                'logged' => time(),
-                'group' => $user->roles[0],
-                'authCode' => ""
-            )
-        );
+        return $this->prosper([
+            'site' => (string)$user->user_url,
+            'uid' => (int)$user->ID,
+            'name' => (string)$user->user_login,
+            'mail' => (string)$user->user_email,
+            'nickname' => (string)$user->nickname,
+            'created' => strtotime($user->user_registered),
+            'activated' => time(),
+            'logged' => time(),
+            'group' => (string)$user->roles[0],
+            'token' => ""
+        ]);
     }
 
     /**
@@ -7344,7 +7365,7 @@ class wp_xmlrpc_server extends IXR_Server
         $post = wp_count_posts();
         $page = wp_count_posts('page');
 
-        $statArray = array(
+        $stat = array(
             "post" => array(
                 "all" => $post->publish + $post->pending + $post->draft + $post->future + $post->private + $post->inherit,
                 "publish" => $post->publish,
@@ -7383,8 +7404,9 @@ class wp_xmlrpc_server extends IXR_Server
             )
         );
 
-        return array(true, $statArray);
-
+        return $this->prosper(json_encode(
+            $stat, JSON_UNESCAPED_UNICODE
+        ));
     }
 
     public function NbGetOptions($args)
@@ -7426,7 +7448,7 @@ class wp_xmlrpc_server extends IXR_Server
                 );
             }
         }
-        return array(true, $struct);
+        return $this->prosper($struct);
     }
 
     /**
@@ -7439,7 +7461,7 @@ class wp_xmlrpc_server extends IXR_Server
             "post_type" => $struct["type"],
             "post_status" => $this->toWpStatus($struct["status"]),
             "post_title" => $struct["title"],
-            "post_content" => $struct["text"],
+            "post_content" => $struct["content"],
             "post_password" => $struct["password"],
             'post_author' => null,
             'post_excerpt' => null,
@@ -7456,7 +7478,7 @@ class wp_xmlrpc_server extends IXR_Server
 //            'terms' => $note["categories"],
             'sticky' => null,
             'enclosure' => null,
-            'ID' => $struct["cid"]
+            'ID' => $struct["nid"]
         );
     }
 
@@ -7493,9 +7515,11 @@ class wp_xmlrpc_server extends IXR_Server
         do_action('xmlrpc_call', 'kraitnabo.post.new');
         unset($content_struct['ID']);
 
-        return array(true,
-            $this->_insert_post($user, $content_struct)
-        );
+        $highlightId = $this->_insert_post($user, $content_struct);
+
+        return $this->prosper([
+            'nid' => (int)$highlightId
+        ]);
     }
 
     /**
@@ -7510,7 +7534,7 @@ class wp_xmlrpc_server extends IXR_Server
 
         $this->escape($args);
         $struct = $args[3];
-        $post_id = $struct['cid'];
+        $post_id = $struct['nid'];
 
         $user = $this->access($args[0], $args[1], $args[2]);
         if (!$user) {
@@ -7551,10 +7575,9 @@ class wp_xmlrpc_server extends IXR_Server
             return $retval;
         }
 
-        return array(
-            true,
-            $post_id
-        );
+        return $this->prosper([
+            'nid' => (int)$post_id
+        ]);
     }
 
     /**
@@ -7569,7 +7592,7 @@ class wp_xmlrpc_server extends IXR_Server
 
         $this->escape($args);
         $struct = $args[3];
-        $page_id = $struct['cid'];
+        $page_id = $struct['nid'];
 
         $user = $this->access($args[0], $args[1], $args[2]);
         if (!$user) {
@@ -7600,7 +7623,7 @@ class wp_xmlrpc_server extends IXR_Server
         $this->escape($postdata);
 
         $ID = $postdata['ID'];
-        $post_content = $struct['text'];
+        $post_content = $struct['content'];
         $post_title = $struct['title'];
         $post_excerpt = $postdata['post_excerpt'];
         $post_password = isset($struct['password']) ? $struct['password'] : null;
@@ -7722,10 +7745,9 @@ class wp_xmlrpc_server extends IXR_Server
         $this->add_enclosure_if_new($page_id, $thisEnclosure);
         $this->attach_uploads($ID, $post_content);
 
-        return array(
-            true, $ID
-        );
-
+        return $this->prosper([
+            'nid' => (int)$ID
+        ]);
     }
 
     /**
@@ -7760,33 +7782,32 @@ class wp_xmlrpc_server extends IXR_Server
 
         // If we found the page then format the data.
         if ($page->ID && ('page' === $page->post_type)) {
-            return array(true,
-                array(
-                    'cid' => $page->ID,
-                    'title' => $page->post_title,
-                    'slug' => $page->post_name,
-                    'created' => strtotime($page->post_date) - 28800,
-                    'modified' => strtotime($page->post_date) - 28800,
-                    'text' => $page->post_content,
-                    'order' => "0",
-                    'authorId' => (string)$user->ID,
-                    'template' => "",
-                    'type' => "page",
-                    'status' => "publish",
-                    'password' => $page->post_password,
-                    'commentsNum' => "0",
-                    'allowComment' => comments_open($page->ID) ? "1" : "0",
-                    'allowPing' => pings_open($page->ID) ? "1" : "0",
-                    'allowFeed' => "0",
-                    'parent' => $page->post_parent,
+            return $this->prosper([
+                'nid' => (int)$page->ID,
+                'title' => (string)$page->post_title,
+                'content' => (string)$page->post_content,
+                'authorId' => (int)$user->ID,
 
-                    'permalink' => get_permalink($page->ID),
-                    'description' => "",
-                    'fields' => json_encode(array()),
-                    'categories' => "",
-                    'tags' => "",
-                )
-            );
+                'slug' => (string)$page->post_name,
+                'order' => 0,
+                'type' => "page",
+                'status' => "publish",
+                'password' => (string)$page->post_password,
+                'parentId' => (int)$page->post_parent,
+                'template' => "",
+
+                'allowComment' => comments_open($page->ID) ? 1 : 0,
+                'allowPing' => pings_open($page->ID) ? 1 : 0,
+                'allowFeed' => 0,
+
+                'created' => strtotime($page->post_date) - 28800,
+                'modified' => strtotime($page->post_date) - 28800,
+
+                'permalink' => (string)get_permalink($page->ID),
+                'fields' => json_encode([]),
+                'tags' => "",
+                'categories' => ""
+            ]);
         } else {
             return new IXR_Error(404, __('Sorry, no such page.'));
         }
@@ -7823,9 +7844,7 @@ class wp_xmlrpc_server extends IXR_Server
             return new IXR_Error(401, __('Sorry, you are not allowed to edit this post.'));
         }
 
-        return array(true,
-            $this->commonNoteStruct($post, $struct)
-        );
+        return $this->prosper($this->commonNoteStruct($post, $struct));
     }
 
     /**
@@ -7863,10 +7882,7 @@ class wp_xmlrpc_server extends IXR_Server
             return new IXR_Error(500, __('Sorry, the post could not be deleted.'));
         }
 
-        return array(
-            true, null
-        );
-
+        return $this->prosper("删除成功");
     }
 
     /**
@@ -7981,29 +7997,30 @@ class wp_xmlrpc_server extends IXR_Server
             foreach ($pages as $page) {
                 if (current_user_can('edit_page', $page->ID)) {
                     $pages_struct[] = array(
-                        'cid' => $page->ID,
-                        'title' => $page->post_title,
-                        'slug' => $page->post_name,
-                        'created' => strtotime($page->post_date) - 28800,
-                        'modified' => strtotime($page->post_date) - 28800,
-                        'text' => $page->post_content,
-                        'order' => "0",
-                        'authorId' => (string)$user->ID,
-                        'template' => "",
+                        'nid' => (int)$page->ID,
+                        'title' => (string)$page->post_title,
+                        'content' => (string)$page->post_content,
+                        'authorId' => (int)$user->ID,
+
+                        'slug' => (string)$page->post_name,
+                        'order' => 0,
                         'type' => "page",
                         'status' => "publish",
-                        'password' => $page->post_password,
-                        'commentsNum' => "0",
-                        'allowComment' => comments_open($page->ID) ? "1" : "0",
-                        'allowPing' => pings_open($page->ID) ? "1" : "0",
-                        'allowFeed' => "0",
-                        'parent' => $page->post_parent,
+                        'password' => (string)$page->post_password,
+                        'parentId' => (int)$page->post_parent,
+                        'template' => "",
 
-                        'permalink' => get_permalink($page->ID),
-                        'description' => "",
-                        'fields' => json_encode(array()),
-                        'categories' => "",
+                        'allowComment' => comments_open($page->ID) ? 1 : 0,
+                        'allowPing' => pings_open($page->ID) ? 1 : 0,
+                        'allowFeed' => 0,
+
+                        'created' => strtotime($page->post_date) - 28800,
+                        'modified' => strtotime($page->post_date) - 28800,
+
+                        'permalink' => (string)get_permalink($page->ID),
+                        'fields' => json_encode([]),
                         'tags' => "",
+                        'categories' => ""
                     );
                 }
             }
@@ -8059,16 +8076,16 @@ class wp_xmlrpc_server extends IXR_Server
             $comment['comment_approved'] = $content_struct['status'];
         }
 
-        if (isset($content_struct['text'])) {
-            $comment['comment_content'] = $content_struct['text'];
+        if (isset($content_struct['message'])) {
+            $comment['comment_content'] = $content_struct['message'];
         }
 
         if (isset($content_struct['author'])) {
             $comment['comment_author'] = $content_struct['author'];
         }
 
-        if (isset($content_struct['url'])) {
-            $comment['comment_author_url'] = $content_struct['url'];
+        if (isset($content_struct['site'])) {
+            $comment['comment_author_url'] = $content_struct['site'];
         }
 
         if (isset($content_struct['mail'])) {
@@ -8137,13 +8154,13 @@ class wp_xmlrpc_server extends IXR_Server
             return new IXR_Error(403, __('Sorry, comments are closed for this item.'));
         }
 
-        if (empty($content_struct['text'])) {
+        if (empty($content_struct['message'])) {
             return new IXR_Error(403, __('Comment is required.'));
         }
 
         $comment = array(
             'comment_post_ID' => $post_id,
-            'comment_content' => $content_struct['text'],
+            'comment_content' => $content_struct['message'],
         );
 
         if ($logged_in) {
@@ -8167,8 +8184,8 @@ class wp_xmlrpc_server extends IXR_Server
             }
 
             $comment['comment_author_url'] = '';
-            if (isset($content_struct['url'])) {
-                $comment['comment_author_url'] = $content_struct['url'];
+            if (isset($content_struct['site'])) {
+                $comment['comment_author_url'] = $content_struct['site'];
             }
 
             $comment['user_ID'] = 0;
@@ -8182,7 +8199,7 @@ class wp_xmlrpc_server extends IXR_Server
             }
         }
 
-        $comment['comment_parent'] = isset($content_struct['parent']) ? absint($content_struct['parent']) : 0;
+        $comment['comment_parent'] = isset($content_struct['parentId']) ? absint($content_struct['parentId']) : 0;
 
         do_action('xmlrpc_call', 'kraitnabo.comment.new');
 
@@ -8195,7 +8212,11 @@ class wp_xmlrpc_server extends IXR_Server
             return new IXR_Error(403, __('Something went wrong.'));
         }
 
-        return array(true, $comment_ID);
+        $callback = [
+            "oid" => (int)$comment_ID
+        ];
+
+        return $this->prosper($callback);
     }
 
     /**
@@ -8229,8 +8250,8 @@ class wp_xmlrpc_server extends IXR_Server
         }
 
         $post_id = '';
-        if (isset($struct['cid'])) {
-            $post_id = absint($struct['cid']);
+        if (isset($struct['nid'])) {
+            $post_id = absint($struct['nid']);
         }
 
         $post_type = '';
@@ -8268,8 +8289,7 @@ class wp_xmlrpc_server extends IXR_Server
                 $comments_struct[] = $this->commonCommentsStruct($comment);
             }
         }
-        return array(true, $comments_struct);
-
+        return $this->prosper($comments_struct);
     }
 
     /**
@@ -8294,11 +8314,6 @@ class wp_xmlrpc_server extends IXR_Server
 
         $name = sanitize_file_name($data['name']);
         $type = $data['mime'];
-
-        // 南博中上传附件是经过base64编码后传输的，这里需要解码
-        if (isset($data['bytes'])) {
-            $bits = base64_decode($data['bytes']);
-        }
 
         do_action('xmlrpc_call', 'kraitnabo.media.new');
 
@@ -8360,13 +8375,10 @@ class wp_xmlrpc_server extends IXR_Server
 //        $struct['file'] = $struct['title'];
 //        $struct['url'] = $struct['link'];
 
-        return array(true,
-            array(
-                'name' => $struct['title'],
-                'url' => $struct['link']
-            )
-        );
-
+        return $this->prosper([
+            'name' => $struct['title'],
+            'url' => $struct['link']
+        ]);
     }
 
 
@@ -8382,7 +8394,7 @@ class wp_xmlrpc_server extends IXR_Server
 
         $this->escape($args);
         $struct = $args[3];
-        $post_id = (int)$struct["cids"][0];
+        $post_id = (int)$struct["list"][0];
 
         $user = $this->access($args[0], $args[1], $args[2]);
         if (!$user) {
@@ -8406,8 +8418,7 @@ class wp_xmlrpc_server extends IXR_Server
             return new IXR_Error(500, __('Sorry, the post could not be deleted.'));
         }
 
-        return array(true, null);
-
+        return $this->prosper("删除文件成功");
     }
 
     /**
@@ -8453,26 +8464,23 @@ class wp_xmlrpc_server extends IXR_Server
 
         foreach ($attachments as $media_item) {
             $attachments_struct[] = array(
-                'cid' => strval($media_item->ID),
-                'title' => $media_item->post_title,
-                'slug' => $media_item->post_name,
+                'mid' => (int)$media_item->ID,
+                'title' => (string)$media_item->post_title,
+                'slug' => (string)$media_item->post_name,
+                'size' => 0,
+                'link' => (string)wp_get_attachment_url($media_item->ID),
+                'path' => (string)wp_get_attachment_url($media_item->ID),
+                'mime' => (string)$media_item->post_mime_type,
+                'desc' => (string)$media_item->post_content,
                 'created' => strtotime($media_item->post_date) - 28800,
-                'size' => "0",
-                'url' => wp_get_attachment_url($media_item->ID),
-                'path' => wp_get_attachment_url($media_item->ID),
-                'mime' => $media_item->post_mime_type,
-                'commentsNum' => "0",
-                'description' => $media_item->post_content,
 
-                'parent_title' => $media_item->post_title,
-                'parent_cid' => "0",
-                'parent_type' => "page",
+                'parentId' => 0,
+                'parentType' => "page",
+                'parentTitle' => (string)$media_item->post_title
             );
         }
 
-        return array(true,
-            $attachments_struct
-        );
+        return $this->prosper($attachments_struct);
     }
 
     /**
@@ -8503,24 +8511,20 @@ class wp_xmlrpc_server extends IXR_Server
         if ($cats) {
             foreach ($cats as $cat) {
                 $cats[] = array(
-                    'mid' => $cat->term_id,
-                    'name' => $cat->name,
-                    'slug' => $cat->slug,
-                    'type' => "category",
-                    'description' => $cat->description,
-                    'count' => $cat->count,
-                    'order' => "0",
-                    'parent' => $cat->parent,
-
-                    'permalink' => get_tag_link($cat->term_id),
+                    'mid' => (int)$cat->term_id,
+                    'name' => (string)$cat->namee,
+                    'slug' => (string)$cat->slug,
+                    'type' => (string)"category",
+                    'desc' => (string)$cat->description,
+                    'count' => (int)$cat->count,
+                    'order' => 0,
+                    'parentId' => (int)$cat->parent,
+                    'permalink' => (string)get_tag_link($cat->term_id)
                 );
             }
         }
 
-        return array(true,
-            $categories_struct
-        );
-
+        return $this->prosper($categories_struct);
     }
 
     /**
@@ -8552,24 +8556,20 @@ class wp_xmlrpc_server extends IXR_Server
         if ($all_tags) {
             foreach ((array)$all_tags as $tag) {
                 $tags[] = array(
-                    'mid' => $tag->term_id,
-                    'name' => $tag->name,
-                    'slug' => $tag->slug,
-                    'type' => "tag",
-                    'description' => $tag->description,
-                    'count' => $tag->count,
-                    'order' => "0",
-                    'parent' => $tag->parent,
-
-                    'permalink' => get_tag_link($tag->term_id),
+                    'mid' => (int)$tag->term_id,
+                    'name' => (string)$tag->namee,
+                    'slug' => (string)$tag->slug,
+                    'type' => (string)"tag",
+                    'desc' => (string)$tag->description,
+                    'count' => (int)$tag->count,
+                    'order' => 0,
+                    'parentId' => (int)$tag->parent,
+                    'permalink' => (string)get_tag_link($tag->term_id)
                 );
             }
         }
 
-        return array(true,
-            $tags
-        );
-
+        return $this->prosper($tags);
     }
 
     /**
@@ -8587,25 +8587,27 @@ class wp_xmlrpc_server extends IXR_Server
         } else {
             $comment_status = $comment->comment_approved;
         }
-        return array(
-            'coid' => $comment->comment_ID,
-            'cid' => $comment->comment_post_ID,
-            'created' => strtotime($comment->comment_date) - 28800,
-            'author' => $comment->comment_author,
-            'authorId' => $comment->user_id,
-            'ownerId' => $comment->user_id,
-            'mail' => $comment->comment_author_email,
-            'url' => $comment->comment_author_url,
-            'ip' => $comment->comment_author_IP,
-            'agent' => "",
-            'text' => $comment->comment_content,
-            'type' => $comment->comment_type,
-            'status' => $this->toNbStatus($comment_status, "comment"),
-            'parent' => $comment->comment_parent,
+        return $this->prosper([
+            'oid' => (int)$comment->comment_ID,
+            'nid' => (int)$comment->comment_post_ID,
+            'author' => (string)$comment->comment_author,
+            'mail' => (string)$comment->comment_author_email,
+            'site' => (string)$comment->comment_author_url,
+            'message' => (string)$comment->comment_content,
 
-            'permalink' => get_comment_link($comment),
-            'title' => get_the_title($comment->comment_post_ID),
-        );
+            'authorId' => (int)$comment->user_id,
+            'ownerId' => (int)$comment->user_id,
+
+            'agent' => "",
+            'address' => (string)$comment->comment_author_IP,
+
+            'type' => (string)$comment->comment_type,
+            'status' => (string)$this->toNbStatus($comment_status, "comment"),
+            'parentId' => (string)$comment->comment_parent,
+            'parentTitle' => (string)get_the_title($comment->comment_post_ID),
+            'permalink' => (string)get_comment_link($comment),
+            'created' => strtotime($comment->comment_date) - 28800,
+        ]);
     }
 
     /**
@@ -8688,29 +8690,30 @@ class wp_xmlrpc_server extends IXR_Server
     public function commonNoteStruct($post, $struct)
     {
         return array(
-            'cid' => $post['ID'],
-            'title' => $post['post_title'],
-            'slug' => $post['post_name'],
+            'nid' => (int)$post['ID'],
+            'title' => (string)$post['post_title'],
+            'content' => (string)$post['post_content'],
+            'authorId' => (int)$post['post_author'],
+
+            'slug' => (string)$post['post_name'],
+            'order' => 0,
+            'type' => (string)$post['post_type'],
+            'status' => (string)$this->toNbStatus($post['post_status']),
+            'password' => (string)$post['post_password'],
+            'parentId' => (int)$post['post_parent'],
+            'template' => "",
+
+            'allowComment' => $post['comment_status'] == "open" ? 1 : 0,
+            'allowPing' => $post['ping_status'] == "open" ? 1 : 0,
+            'allowFeed' => 0,
+
             'created' => strtotime($post['post_date']) - 28800,
             'modified' => strtotime($post['post_modified']) - 28800,
-            'text' => $post['post_content'],
-            'order' => "0",
-            'authorId' => $post['post_author'],
-            'template' => "",
-            'type' => $post['post_type'],
-            'status' => $this->toNbStatus($post['post_status']),
-            'password' => $post['post_password'],
-            'commentsNum' => "0",
-            'allowComment' => $post['comment_status'] == "open" ? "1" : "0",
-            'allowPing' => $post['ping_status'] == "open" ? "1" : "0",
-            'allowFeed' => "0",
-            'parent' => $post['post_parent'],
 
-            'permalink' => get_permalink($post['ID']),
-            'description' => "",
-            'fields' => json_encode(array()),
-            'categories' => $this->commonMetasNames($post['ID'], true),
-            'tags' => $this->commonMetasNames($post['ID'], false),
+            'permalink' => (string)get_permalink($post['ID']),
+            'fields' => json_encode([]),
+            'tags' => (string)$this->commonMetasNames($post['ID'], false),
+            'categories' => (string)$this->commonMetasNames($post['ID'], true),
         );
     }
 }
